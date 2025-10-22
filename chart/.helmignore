@@ -1,0 +1,10 @@
+.github/*
+docs/*
+.git/*
+.gitignore
+CONTRIBUTING.md
+test/*
+testing/*
+override.yaml
+*.sh
+Dockerfile

@@ -1,0 +1,4 @@
+service:
+  nexus:
+    enabled: true
+    nodePort: <nodeport.http>

@@ -1,0 +1,4 @@
+statefulset:
+  container:
+    env:
+      install4jAddVmParams: <template.{{ ternary "-Djava.net.preferIPv6Addresses=true -Xms2703m -Xmx2703m" "-Xms2703m -Xmx2703m" (eq .acp.protocolStack "IPv6") }}>

@@ -1,0 +1,13 @@
+service:
+  nexus:
+    enabled: true
+    type: ClusterIP
+
+ingress:
+  enabled: true
+  host: nexus-test-ingress-https.example.com
+  defaultRule: true
+  tls:
+    - secretName: "test-tls-cert"
+      hosts:
+      - nexus-test-ingress-https.example.com

@@ -1,0 +1,97 @@
+# Copyright (c) 2016-present Sonatype, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM build-harbor.alauda.cn/ops/alpine:3.20.6-alauda-202502271510
+
+LABEL name="Nexus Repository Manager" \
+      maintainer="Sonatype <support@sonatype.com>" \
+      vendor=Sonatype \
+      version="3.81.1-01" \
+      release="3.81.1" \
+      url="https://sonatype.com" \
+      summary="The Nexus Repository Manager server \
+          with universal support for popular component formats." \
+      description="The Nexus Repository Manager server \
+          with universal support for popular component formats." \
+      run="docker run -d --name NAME \
+          -p 8081:8081 \
+          IMAGE" \
+      stop="docker stop NAME" \
+      com.sonatype.license="Apache License, Version 2.0" \
+      com.sonatype.name="Nexus Repository Manager base image" \
+      io.k8s.description="The Nexus Repository Manager server \
+          with universal support for popular component formats." \
+      io.k8s.display-name="Nexus Repository Manager" \
+      io.openshift.expose-services="8081:8081" \
+      io.openshift.tags="Sonatype,Nexus,Repository Manager"
+
+ARG NEXUS_VERSION=3.81.1-01
+ARG NEXUS_DOWNLOAD_URL=https://build-nexus.alauda.cn/repository/alauda/files/sonatype-nexus-repository-${NEXUS_VERSION}-assembly.zip
+ARG NEXUS_DOWNLOAD_SHA256_HASH=88e0b313af161c8d5817aa6399e5a995755cde7e956a0c6468807b073d6e99c6
+
+# configure nexus runtime
+ENV SONATYPE_DIR=/opt/sonatype
+ENV NEXUS_HOME=${SONATYPE_DIR}/nexus \
+    NEXUS_DATA=/nexus-data \
+    NEXUS_CONTEXT='' \
+    SONATYPE_WORK=${SONATYPE_DIR}/sonatype-work \
+    DOCKER_TYPE='alpine'
+
+# Install Java & tar
+RUN apk add openjdk17 tar procps gzip curl shadow bash zip \
+    && apk cache clean \
+    && groupadd --gid 200 -r nexus \
+    && useradd --uid 200 -r nexus -g nexus -s /bin/false -d /opt/sonatype/nexus -c 'Nexus Repository Manager user'
+
+RUN apk del --no-cache openssl || true
+RUN apk update && apk add --no-cache openssl
+
+WORKDIR ${SONATYPE_DIR}
+
+# Download nexus & setup directories
+RUN curl -L ${NEXUS_DOWNLOAD_URL} --output sonatype-nexus-repository-${NEXUS_VERSION}-assembly.zip \
+    && echo "${NEXUS_DOWNLOAD_SHA256_HASH} sonatype-nexus-repository-${NEXUS_VERSION}-assembly.zip" > sonatype-nexus-repository-${NEXUS_VERSION}-assembly.zip.sha256 \
+    && sha256sum -c sonatype-nexus-repository-${NEXUS_VERSION}-assembly.zip.sha256 \
+    && unzip sonatype-nexus-repository-${NEXUS_VERSION}-assembly.zip \
+    && rm -f sonatype-nexus-repository-${NEXUS_VERSION}-assembly.zip sonatype-nexus-repository-${NEXUS_VERSION}-assembly.zip.sha256 \
+    && mv nexus-${NEXUS_VERSION} $NEXUS_HOME \
+    && chown -R nexus:nexus ${SONATYPE_WORK} \
+    && mv ${SONATYPE_WORK}/nexus3 ${NEXUS_DATA} \
+    && ln -s ${NEXUS_DATA} ${SONATYPE_WORK}/nexus3
+
+RUN echo "#!/bin/bash" >> ${SONATYPE_DIR}/start-nexus-repository-manager.sh \
+   && echo "cd /opt/sonatype/nexus" >> ${SONATYPE_DIR}/start-nexus-repository-manager.sh \
+   && echo "exec ./bin/nexus run" >> ${SONATYPE_DIR}/start-nexus-repository-manager.sh \
+   && chmod a+x ${SONATYPE_DIR}/start-nexus-repository-manager.sh \
+   && chmod a+x ${SONATYPE_DIR}/nexus/bin/nexus \
+   && sed -e '/^nexus-context/ s:$:${NEXUS_CONTEXT}:' -i ${NEXUS_HOME}/etc/nexus-default.properties
+
+## replace jar dependency for vulnerabilities
+COPY scripts/replace-vuln-jar.sh ${NEXUS_HOME}/bin/replace-vuln-jar.sh
+RUN chmod +x ${NEXUS_HOME}/bin/replace-vuln-jar.sh && \
+    ${NEXUS_HOME}/bin/replace-vuln-jar.sh -i ${NEXUS_HOME}/bin/sonatype-nexus-repository-${NEXUS_VERSION}.jar -r net/minidev/json-smart:2.5.0:2.5.2,org/keycloak/keycloak-saml-core:18.0.2:25.0.6,commons-fileupload/commons-fileupload:1.5:1.6.0,io/projectreactor/netty/reactor-netty-http:1.0.39:1.2.8,org/apache/commons/commons-lang3:3.13.0:3.18.0,org/springframework/boot/spring-boot:3.3.6:3.3.11,commons-beanutils/commons-beanutils:1.9.4:1.11.0,io/netty/netty-codec:4.1.119.Final:4.1.125.Final,org/bouncycastle/bc-fips:2.1.0:2.1.1,org/bouncycastle/bcpkix-jdk15to18:1.78.1:1.79,org/springframework/spring-core:6.1.15:6.2.11,io/netty/netty-codec-http2:4.1.119.Final:4.1.125.Final,io/netty/netty-codec-http:4.1.119.Final:4.1.125.Final && \
+    rm -f ${NEXUS_HOME}/bin/replace-vuln-jar.sh
+
+RUN apk del gzip shadow bash zip
+
+VOLUME ${NEXUS_DATA}
+
+EXPOSE 8081
+USER nexus
+
+ENV INSTALL4J_ADD_VM_PARAMS="-Xms2703m -Xmx2703m -XX:MaxDirectMemorySize=2703m -Djava.util.prefs.userRoot=${NEXUS_DATA}/javaprefs"
+
+ENTRYPOINT ["/opt/sonatype/nexus/bin/nexus"]
+
+CMD ["run"]

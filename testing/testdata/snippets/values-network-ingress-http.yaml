@@ -1,0 +1,10 @@
+service:
+  nexus:
+    enabled: true
+    type: ClusterIP
+
+ingress:
+  enabled: true
+  host: nexus-test-ingress-http.example.com
+  defaultRule: true
+

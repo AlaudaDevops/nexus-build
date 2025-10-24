@@ -4,7 +4,7 @@ global:
   images:
     nexus:
       repository: devops/sonatype-docker-nexus3
-      tag: v3.81.1-gb831288
+      tag: v3.76.0-gd1abf74
       support_arm: true
       thirdparty: true
     busybox:
@@ -78,9 +78,6 @@ statefulset:
   # # Add your own init containers as needed
   initContainers: []
   container:
-    image:
-      repository: sonatype/nexus3
-      nexusTag: 3.81.1
     resources:
       # See help documentation, these are minimum system requirements
       requests:
@@ -374,3 +371,7 @@ config:
   enabled: false
   mountPath: /sonatype-nexus-conf
   data: null
+
+plugins:
+  enabled: false
+  path: null

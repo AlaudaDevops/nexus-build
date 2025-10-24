@@ -14,7 +14,7 @@ generate:
 create-testing-ns:
 	kubectl create ns bdd-testing || true
 
-TAGS ?= @allure.label.epic:nexus-chart-deploy
+TAGS ?= @nexus-chart-deploy-network-http
 test: create-testing-ns
 	$(TEST_COMMAND) $(GODOG_ARGS) --godog.tags=$(TAGS)
 

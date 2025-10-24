@@ -7,9 +7,3 @@ go.work
 go.work.sum
 config.yaml
 bin
-dist
-__pycache__
-.pytest_cache
-target
-test_example_package.egg-info
-

@@ -48,4 +48,3 @@ spec:
       nexus:
         enabled: true
         nodePort: <nodeport.http>
-

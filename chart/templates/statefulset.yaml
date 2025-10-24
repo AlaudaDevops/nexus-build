@@ -90,6 +90,28 @@ spec:
         {{- if .Values.statefulset.initContainers }}
         {{ toYaml .Values.statefulset.initContainers | nindent 8 }}
         {{- end }}
+        {{- if .Values.plugins.enabled }}
+        - name: deploy-plugins
+          image: {{ include "nexus.image" (dict "values" .Values "image" "plugins") }}
+          command: [ "/bin/sh" ]
+          args:
+            - -c
+            - >-
+              cp {{ .Values.plugins.path }}/*.jar /nexus-deploy/ &&
+              chown -R '{{ include "nexus.runAsUser" . }}:{{ include "nexus.runAsGroup" . }}' /nexus-deploy/
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: nexus-plugins
+              mountPath: /nexus-deploy
+          resources:
+            limits:
+              cpu: "0.2"
+              memory: "256Mi"
+            requests:
+              cpu: "0.1"
+              memory: "128Mi"
+        {{- end }}
       {{- if .Values.statefulset.nodeSelector }}
       nodeSelector:
         {{ toYaml .Values.statefulset.nodeSelector | nindent 8 }}
@@ -204,9 +226,12 @@ spec:
           -Dnexus.datastore.nexus.jdbcUrl=jdbc:postgresql://${DB_HOST}:{{ .Values.statefulset.container.env.nexusDBPort }}/${DB_NAME}{{ .Values.statefulset.container.env.jdbcUrlParams }} \
           -Dnexus.datastore.nexus.username=${DB_USER} \
           -Dnexus.datastore.nexus.password=${DB_PASSWORD}"
-          {{ else }} # default use h2 database
+          {{ else }}
               value: "{{ .Values.statefulset.container.env.install4jAddVmParams }} \
-              -Dnexus.datastore.enabled=true -Djava.util.prefs.userRoot=${NEXUS_DATA}/javaprefs"
+              -Dnexus.datastore.enabled=true -Djava.util.prefs.userRoot=${NEXUS_DATA}/javaprefs \
+              -Dnexus.datastore.nexus.jdbcUrl=-Dnexus.datastore.nexus.jdbcUrl=jdbc:h2:/nexus-data/db  \
+              -Dnexus.datastore.nexus.username=${DB_USER} \
+              -Dnexus.datastore.nexus.password=${DB_PASSWORD}"
           {{ end }}
           {{- if .Values.statefulset.container.additionalEnv }}
             {{ toYaml .Values.statefulset.container.additionalEnv | nindent 12 }}

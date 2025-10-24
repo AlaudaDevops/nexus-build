@@ -1,4 +1,5 @@
 # language: zh-CN
+@allure.label.epic:nexus-chart-deploy
 @nexus-operator-feature
 @e2e
 功能: 通过 operator 部署 nexus，并验证业务功能
@@ -17,9 +18,6 @@
       timeout: 10m
       """
     并且 "nexus-basic" 实例资源检查通过
-    并且 执行 "接受 EULA" 脚本成功
-      | command |
-      | ./hack/accepted-eula.sh http://<node.ip.random.readable>:<nodeport.http> admin Nexus12345 |
     并且 执行 "Nexus e2e" 脚本成功
       | command |
       | ./hack/run-e2e.sh http://<node.ip.random.readable>:<nodeport.http> admin Nexus12345 <template.{{ ternary "\"test_maven_repo.py test_pypi_repo.py\"" "" (eq .acp.protocolStack "IPv6") }}> |

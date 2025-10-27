@@ -1,0 +1,99 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: build-nexus-image
+  annotations:
+    pipelinesascode.tekton.dev/on-comment: "^((/test-all)|(/build-test-image)|(/test-multi.*\ build-test-image.*))$"
+    pipelinesascode.tekton.dev/max-keep-runs: "5"
+    pipelinesascode.tekton.dev/on-cel-expression: |-
+      target_branch.matches("^(main|release-.*|alauda-.*)$") &&
+      !last_commit_title.contains("Auto-commit") &&
+      (
+        "image/**".pathChanged() ||
+        ".tekton/build-image.yaml".pathChanged()
+      )
+spec:
+  pipelineRef:
+    resolver: hub
+    params:
+      - name: catalog
+        value: alauda
+      - name: type
+        value: tekton
+      - name: kind
+        value: pipeline
+      - name: name
+        value: clone-image-build-test-scan
+      - name: version
+        value: "0.2"
+
+  params:
+    - name: git-url
+      value: "{{ repo_url }}"
+    - name: git-revision
+      value: "{{ source_branch }}"
+    - name: git-commit
+      value: "{{ revision }}"
+    - name: pull-request-number
+      value: "{{ pull_request_number }}"
+
+    - name: image-repository
+      value: build-harbor.alauda.cn/devops/sonatype-docker-nexus3
+
+    - name: dockerfile-path
+      value: image/Dockerfile.alpine.java17
+
+    - name: context
+      value: "image"
+
+    - name: tag-template
+      value: "v3.81.0-g${ShortSha}"
+
+    - name: ignore-trivy-scan
+      value: "true"
+
+    - name: file-list-for-commit-sha
+      value:
+        - .tekton/build-image.yaml
+        - Dockerfile.alpine.java17
+    - name: update-files-based-on-image
+      value: |
+        yq eval ".global.images.nexus.tag = \"${IMAGE_TAG}\"" -i chart/values.yaml
+  workspaces:
+    - name: source
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: 1Gi
+    - name: dockerconfig
+      secret:
+        secretName: build-harbor.kauto.docfj
+    # This secret will be replaced by the pac controller
+    - name: basic-auth
+      secret:
+        secretName: "{{ git_auth_secret }}"
+    - name: gitversion-config
+      configMap:
+        name: gitversion-config
+
+  taskRunTemplate:
+    # 让所有任务都以非 root 用户运行。
+    podTemplate:
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: "OnRootMismatch"
+
+  taskRunSpecs:
+    - pipelineTaskName: prepare-build
+      computeResources:
+        limits:
+          cpu: "4"
+          memory: 4Gi
+        requests:
+          cpu: "2"
+          memory: 2Gi

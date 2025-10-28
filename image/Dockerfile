@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM build-harbor.alauda.cn/ops/alpine:3.20.6-alauda-202502271510
+FROM build-harbor.alauda.cn/ops/alpine:3.20.6-alauda-202510091100
 
 LABEL name="Nexus Repository Manager" \
       maintainer="Sonatype <support@sonatype.com>" \

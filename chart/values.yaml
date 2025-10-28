@@ -4,7 +4,7 @@ global:
   images:
     nexus:
       repository: devops/sonatype-docker-nexus3
-      tag: v3.81.1-gb831288
+      tag: v3.81.0-ga03da32-a03da3
       support_arm: true
       thirdparty: true
     busybox:
@@ -12,7 +12,6 @@ global:
       tag: stable
       support_arm: true
       thirdparty: true
-
 # Declare variables to be passed into your templates.
 namespaces:
   nexusNs:
@@ -27,12 +26,12 @@ serviceAccount:
   name: nexus-repository-deployment-sa #This service account in managed by Helm
   labels: {}
   annotations:
-    # Set annotations for service account. E.g. if deploying to AWS EKS
-    # and secrets manager is enabled then this role should have permissions for using secret manager.
-    # If using externaldns, role with route53 permissions needed by external-dns
-    # eks.amazonaws.com/role-arn: arn:aws:iam::000000000000:role/nxrm-nexus-role
+  # Set annotations for service account. E.g. if deploying to AWS EKS
+  # and secrets manager is enabled then this role should have permissions for using secret manager.
+  # If using externaldns, role with route53 permissions needed by external-dns
+  # eks.amazonaws.com/role-arn: arn:aws:iam::000000000000:role/nxrm-nexus-role
 azure:
-  enabled: false  #set to true to enable azure specific yamls/snippets
+  enabled: false #set to true to enable azure specific yamls/snippets
   keyvault:
     enabled: false # set to true to pull license, db and nexus admin password secrets from azure key vault
 aws:
@@ -70,10 +69,9 @@ statefulset:
 
   # Uncomment and modify this to run a command after starting the nexus container.
   postStart:
-    command: null   # '["/bin/sh", "-c", "ls"]'
+    command: null # '["/bin/sh", "-c", "ls"]'
   preStart:
     command: null
-
   # # Add init containers. e.g. to be used to give specific permissions for nexus-data.
   # # Add your own init containers as needed
   initContainers: []
@@ -98,27 +96,26 @@ statefulset:
       install4jAddVmParams: "-Xms2703m -Xmx2703m"
       jdbcUrlParams: null # Must start with a '?' e.g. "?foo=bar&baz=foo"
       zeroDowntimeEnabled: false
-    additionalEnv:
-      null
-      # -- Uncomment these when using secret.existingDbSecret.enabled = true
-      # - name: DB_NAME
-      #   valueFrom:
-      #     secretKeyRef:
-      #       name: secret-name
-      #       key: secret-key
-      # - name: DB_HOST
-      #   valueFrom:
-      #     secretKeyRef:
-      #       name: secret-name
-      #       key: secret-key
-      # - name: DB_USER
-      #   valueFrom:
-      #     secretKeyRef:
-      #       name: secret-name
-      #       key: secret-key
-      # - name: DB_PASSWORD
-      #   valueFrom:
-      #     secretKeyRef:
+    additionalEnv: null
+    # -- Uncomment these when using secret.existingDbSecret.enabled = true
+    # - name: DB_NAME
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: secret-name
+    #       key: secret-key
+    # - name: DB_HOST
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: secret-name
+    #       key: secret-key
+    # - name: DB_USER
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: secret-name
+    #       key: secret-key
+    # - name: DB_PASSWORD
+    #   valueFrom:
+    #     secretKeyRef:
     #       name: secret-name
     #       key: secret-key
   requestLogContainer:
@@ -218,9 +215,7 @@ pvc:
   volumeClaimTemplate:
     enabled: false
   existingClaim: null
-
 hostPath: null
-
 service: # Nexus Repo NodePort Service
   annotations: {}
   nexus:
@@ -239,33 +234,33 @@ externalsecrets:
     name: nexus-secret-store
     spec:
       provider:
-#        aws:
-#          service: SecretsManager
-#          region: us-east-1
-#          auth:
-#            jwt:
-#              serviceAccountRef:
-#                name: nexus-repository-deployment-sa # Use the same service account name as specified in serviceAccount.name
-# Example for Azure
-#    spec:
-#      provider:
-#        azurekv:
-#          authType: WorkloadIdentity
-#          vaultUrl: "https://xx-xxxx-xx.vault.azure.net"
-#          serviceAccountRef:
-#            name: nexus-repository-deployment-sa # Use the same service account name as specified in serviceAccount.name
-# Example for Google (GCP)
-#    spec:
-#      provider:
-#        gcpsm:
-#          projectID: "nxrm-gcp-deployments"
-#          auth:
-#            workloadIdentity:
-#              clusterLocation: "us-central1-a"
-#              clusterName: "test-gke-cluster"
-#              serviceAccountRef:
-#                name: nexus-repository-deployment-sa
-#                namespace: nexusrepo
+  #        aws:
+  #          service: SecretsManager
+  #          region: us-east-1
+  #          auth:
+  #            jwt:
+  #              serviceAccountRef:
+  #                name: nexus-repository-deployment-sa # Use the same service account name as specified in serviceAccount.name
+  # Example for Azure
+  #    spec:
+  #      provider:
+  #        azurekv:
+  #          authType: WorkloadIdentity
+  #          vaultUrl: "https://xx-xxxx-xx.vault.azure.net"
+  #          serviceAccountRef:
+  #            name: nexus-repository-deployment-sa # Use the same service account name as specified in serviceAccount.name
+  # Example for Google (GCP)
+  #    spec:
+  #      provider:
+  #        gcpsm:
+  #          projectID: "nxrm-gcp-deployments"
+  #          auth:
+  #            workloadIdentity:
+  #              clusterLocation: "us-central1-a"
+  #              clusterName: "test-gke-cluster"
+  #              serviceAccountRef:
+  #                name: nexus-repository-deployment-sa
+  #                namespace: nexusrepo
 
   secrets:
     nexusSecret:
@@ -368,7 +363,6 @@ nexus:
   #     secretName: registry-secret
   #     targetPort: 8081
   #     annotations: {}
-
 # Enable configmap and add arbitrary data in configmap
 config:
   enabled: false

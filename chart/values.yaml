@@ -4,7 +4,7 @@ global:
   images:
     nexus:
       repository: devops/sonatype-docker-nexus3
-      tag: v3.81.0-ga03da32-a03da3
+      tag: v3.81.0-gd5fb732
       support_arm: true
       thirdparty: true
     busybox:
@@ -357,12 +357,12 @@ nexus:
     enabled: false
     type: NodePort
     protocol: TCP
-  # registries:
-  #   - host: chart.local
-  #     port: 5000
-  #     secretName: registry-secret
-  #     targetPort: 8081
-  #     annotations: {}
+    # registries:
+    #   - host: chart.local
+    #     port: 5000
+    #     secretName: registry-secret
+    #     targetPort: 8081
+    #     annotations: {}
 # Enable configmap and add arbitrary data in configmap
 config:
   enabled: false

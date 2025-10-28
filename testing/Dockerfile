@@ -9,7 +9,7 @@ RUN set -eux; \
     cd /app && \
     CGO_ENABLED=0 go test -c -o /tools/bin/nexus.test ./
 
-FROM registry.alauda.cn:60070/devops/nexus-ce-test-base:latest-f9b42a
+FROM registry.alauda.cn:60070/devops/nexus-ce-test-base:latest-ca92da
 
 RUN mkdir -p /tools/bin
 COPY --from=builder /tools/bin /tools/bin

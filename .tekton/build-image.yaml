@@ -41,7 +41,7 @@ spec:
       value: build-harbor.alauda.cn/devops/sonatype-docker-nexus3
 
     - name: dockerfile-path
-      value: image/Dockerfile.alpine.java17
+      value: image/Dockerfile
 
     - name: context
       value: "image"
@@ -55,7 +55,7 @@ spec:
     - name: file-list-for-commit-sha
       value:
         - .tekton/build-image.yaml
-        - Dockerfile.alpine.java17
+        - image/Dockerfile
     - name: update-files-based-on-image
       value: |
         yq eval ".global.images.nexus.tag = \"${IMAGE_TAG}\"" -i chart/values.yaml

@@ -39,7 +39,7 @@ spec:
       - name: name
         value: vcluster-integration-test
       - name: version
-        value: "0.3"
+        value: "0.2"
 
   params:
     - name: git-revision
@@ -63,7 +63,6 @@ spec:
           export KUBECONFIG=$(workspaces.config.path)/vcluster-config
           kubectl config view
 
-          trap 'chmod -R a+r allure-results/* && mkdir -p $(workspaces.source.path)/testing/allure-results && cp -r allure-results/* $(workspaces.source.path)/testing/allure-results/' EXIT
           cd $(workspaces.source.path)/testing
           echo "run integration tests..."
           export GODOG_ARGS="--godog.concurrency=1 --godog.format=allure"

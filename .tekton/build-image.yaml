@@ -55,7 +55,7 @@ spec:
     - name: file-list-for-commit-sha
       value:
         - .tekton/build-image.yaml
-        - Dockerfile.alpine.java17
+        - image/Dockerfile.alpine.java17
     - name: update-files-based-on-image
       value: |
         yq eval ".global.images.nexus.tag = \"${IMAGE_TAG}\"" -i chart/values.yaml

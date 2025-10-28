@@ -77,10 +77,38 @@ RUN echo "#!/bin/bash" >> ${SONATYPE_DIR}/start-nexus-repository-manager.sh \
    && chmod a+x ${SONATYPE_DIR}/nexus/bin/nexus \
    && sed -e '/^nexus-context/ s:$:${NEXUS_CONTEXT}:' -i ${NEXUS_HOME}/etc/nexus-default.properties
 
+# Define target versions for vulnerability fixes
+# renovate: datasource=maven depName=json-smart lookupName=net.minidev:json-smart
+ARG JSON_SMART_TARGET_VERSION=2.5.2
+# renovate: datasource=maven depName=keycloak-saml-core lookupName=org.keycloak:keycloak-saml-core
+ARG KEYCLOAK_SAML_CORE_TARGET_VERSION=25.0.6
+# renovate: datasource=maven depName=commons-fileupload lookupName=commons-fileupload:commons-fileupload
+ARG COMMONS_FILEUPLOAD_TARGET_VERSION=1.6.0
+# renovate: datasource=maven depName=reactor-netty-http lookupName=io.projectreactor.netty:reactor-netty-http
+ARG REACTOR_NETTY_HTTP_TARGET_VERSION=1.2.8
+# renovate: datasource=maven depName=commons-lang3 lookupName=org.apache.commons:commons-lang3
+ARG COMMONS_LANG3_TARGET_VERSION=3.18.0
+# renovate: datasource=maven depName=spring-boot lookupName=org.springframework.boot:spring-boot
+ARG SPRING_BOOT_TARGET_VERSION=3.3.11
+# renovate: datasource=maven depName=commons-beanutils lookupName=commons-beanutils:commons-beanutils
+ARG COMMONS_BEANUTILS_TARGET_VERSION=1.11.0
+# renovate: datasource=maven depName=netty-codec lookupName=io.netty:netty-codec
+ARG NETTY_CODEC_TARGET_VERSION=4.1.125.Final
+# renovate: datasource=maven depName=bc-fips lookupName=org.bouncycastle:bc-fips
+ARG BC_FIPS_TARGET_VERSION=2.1.1
+# renovate: datasource=maven depName=bcpkix-jdk15to18 lookupName=org.bouncycastle:bcpkix-jdk15to18
+ARG BCPKIX_TARGET_VERSION=1.79
+# renovate: datasource=maven depName=spring-core lookupName=org.springframework:spring-core
+ARG SPRING_CORE_TARGET_VERSION=6.2.11
+# renovate: datasource=maven depName=netty-codec-http2 lookupName=io.netty:netty-codec-http2
+ARG NETTY_CODEC_HTTP2_VERSION=4.1.125.Final
+# renovate: datasource=maven depName=netty-codec-http lookupName=io.netty:netty-codec-http
+ARG NETTY_CODEC_HTTP_VERSION=4.1.125.Final
+
 ## replace jar dependency for vulnerabilities
 COPY scripts/replace-vuln-jar.sh ${NEXUS_HOME}/bin/replace-vuln-jar.sh
 RUN chmod +x ${NEXUS_HOME}/bin/replace-vuln-jar.sh && \
-    ${NEXUS_HOME}/bin/replace-vuln-jar.sh -i ${NEXUS_HOME}/bin/sonatype-nexus-repository-${NEXUS_VERSION}.jar -r net/minidev/json-smart:2.5.0:2.5.2,org/keycloak/keycloak-saml-core:18.0.2:25.0.6,commons-fileupload/commons-fileupload:1.5:1.6.0,io/projectreactor/netty/reactor-netty-http:1.0.39:1.2.8,org/apache/commons/commons-lang3:3.13.0:3.18.0,org/springframework/boot/spring-boot:3.3.6:3.3.11,commons-beanutils/commons-beanutils:1.9.4:1.11.0,io/netty/netty-codec:4.1.119.Final:4.1.125.Final,org/bouncycastle/bc-fips:2.1.0:2.1.1,org/bouncycastle/bcpkix-jdk15to18:1.78.1:1.79,org/springframework/spring-core:6.1.15:6.2.11,io/netty/netty-codec-http2:4.1.119.Final:4.1.125.Final,io/netty/netty-codec-http:4.1.119.Final:4.1.125.Final && \
+    ${NEXUS_HOME}/bin/replace-vuln-jar.sh -i ${NEXUS_HOME}/bin/sonatype-nexus-repository-${NEXUS_VERSION}.jar -r net/minidev/json-smart:2.5.0:${JSON_SMART_TARGET_VERSION},org/keycloak/keycloak-saml-core:18.0.2:${KEYCLOAK_SAML_CORE_TARGET_VERSION},commons-fileupload/commons-fileupload:1.5:${COMMONS_FILEUPLOAD_TARGET_VERSION},io/projectreactor/netty/reactor-netty-http:1.0.39:${REACTOR_NETTY_HTTP_TARGET_VERSION},org/apache/commons/commons-lang3:3.13.0:${COMMONS_LANG3_TARGET_VERSION},org/springframework/boot/spring-boot:3.3.6:${SPRING_BOOT_TARGET_VERSION},commons-beanutils/commons-beanutils:1.9.4:${COMMONS_BEANUTILS_TARGET_VERSION},io/netty/netty-codec:4.1.119.Final:${NETTY_CODEC_TARGET_VERSION},org/bouncycastle/bc-fips:2.1.0:${BC_FIPS_TARGET_VERSION},org/bouncycastle/bcpkix-jdk15to18:1.78.1:${BCPKIX_TARGET_VERSION},org/springframework/spring-core:6.1.15:${SPRING_CORE_TARGET_VERSION},io/netty/netty-codec-http2:4.1.119.Final:${NETTY_CODEC_HTTP2_VERSION},io/netty/netty-codec-http:4.1.119.Final:${NETTY_CODEC_HTTP_VERSION} && \
     rm -f ${NEXUS_HOME}/bin/replace-vuln-jar.sh
 
 RUN apk del gzip shadow bash zip

@@ -15,7 +15,7 @@
     并且 已导入 "password" 资源: "./testdata/resources/secret-password.yaml"
     当 使用 helm 部署实例到 "testing-nexus-storage-sc-<template.{{randAlphaNum 4 | toLower}}>" 命名空间
       """
-      chartPath: ../
+      chartPath: ../chart
       releaseName: nexus-sc
       values:
       - testdata/snippets/base-values.yaml
@@ -30,6 +30,7 @@
     并且 Pod 资源检查通过
       | name                 | path                                                                         | value                         |
       | nexus-sc-nxrm-ha-0   | $.spec.volumes[?(@.name == 'nexus-data')][0].persistentVolumeClaim.claimName | nexus-data-nexus-sc-nxrm-ha-0 |
+      | nexus-sc-nxrm-ha-0       | $.status.conditions[?(@.type == 'Ready')][0].status | True |
 
   @automated
   @priority-high
@@ -40,7 +41,7 @@
     并且 已导入 "password" 资源: "./testdata/resources/secret-password.yaml"
     当 使用 helm 部署实例到 "testing-nexus-storage-hostpath-<template.{{randAlphaNum 4 | toLower}}>" 命名空间
       """
-      chartPath: ../
+      chartPath: ../chart
       releaseName: nexus-hostpath
       values:
       - testdata/snippets/base-values.yaml
@@ -55,6 +56,7 @@
     并且 Pod 资源检查通过
       | name                       | path            | value        |
       | nexus-hostpath-nxrm-ha-0   | $.spec.nodeName | <node.name.random> |
+      | nexus-hostpath-nxrm-ha-0   | $.status.conditions[?(@.type == 'Ready')][0].status | True |
     并且 执行 "接受 EULA" 脚本成功
       | command |
       | ./hack/accepted-eula.sh http://<node.ip.random.readable>:<nodeport.http> admin Nexus12345 |
@@ -72,7 +74,7 @@
     并且 已导入 "pvc" 资源: "./testdata/resources/storage-pvc.yaml"
     当 使用 helm 部署实例到 "testing-nexus-storage-pvc-<template.{{randAlphaNum 4 | toLower}}>" 命名空间
       """
-      chartPath: ../
+      chartPath: ../chart
       releaseName: nexus-pvc
       values:
       - testdata/snippets/base-values.yaml
@@ -87,6 +89,7 @@
     并且 Pod 资源检查通过
       | name                  | path                                                                         | value       |
       | nexus-pvc-nxrm-ha-0   | $.spec.volumes[?(@.name == 'nexus-data')][0].persistentVolumeClaim.claimName | nexus-pvc   |
+      | nexus-pvc-nxrm-ha-0       | $.status.conditions[?(@.type == 'Ready')][0].status | True |
     并且 执行 "接受 EULA" 脚本成功
       | command |
       | ./hack/accepted-eula.sh http://<node.ip.random.readable>:<nodeport.http> admin Nexus12345 |

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>AlaudaDevops/renovate-config:base"
+  ],
+  "baseBranches": [
+    "main",
+    "alauda-*"
+  ],
+  "enabledManagers": ["dockerfile", "regex", "gradle-wrapper", "maven"],
+  "ignorePaths": [
+    "**/testdata/**",
+    "testing/**"
+  ],
+  "labels": ["dependencies"],
+  "postUpdateOptions": ["gomodTidy"],
+  "packageRules": [
+    {
+      "matchManagers": ["maven"],
+      "enabled": true
+    },
+    {
+      "matchManagers": ["maven"],
+      "updateTypes": ["patch"],
+      "enabled": true
+    },
+    {
+      "matchManagers": ["maven"],
+      "updateTypes": ["major", "minor"],
+      "enabled": false
+    }
+  ]
+}

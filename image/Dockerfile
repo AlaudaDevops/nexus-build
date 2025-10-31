@@ -87,7 +87,7 @@ ARG COMMONS_FILEUPLOAD_TARGET_VERSION=1.6.0
 # renovate: datasource=maven depName=reactor-netty-http lookupName=io.projectreactor.netty:reactor-netty-http
 ARG REACTOR_NETTY_HTTP_TARGET_VERSION=1.2.8
 # renovate: datasource=maven depName=commons-lang3 lookupName=org.apache.commons:commons-lang3
-ARG COMMONS_LANG3_TARGET_VERSION=3.18.0
+ARG COMMONS_LANG3_TARGET_VERSION=3.19.0
 # renovate: datasource=maven depName=spring-boot lookupName=org.springframework.boot:spring-boot
 ARG SPRING_BOOT_TARGET_VERSION=3.3.11
 # renovate: datasource=maven depName=commons-beanutils lookupName=commons-beanutils:commons-beanutils

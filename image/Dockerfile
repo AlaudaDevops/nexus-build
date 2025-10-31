@@ -85,25 +85,25 @@ ARG KEYCLOAK_SAML_CORE_TARGET_VERSION=25.0.6
 # renovate: datasource=maven depName=commons-fileupload lookupName=commons-fileupload:commons-fileupload
 ARG COMMONS_FILEUPLOAD_TARGET_VERSION=1.6.0
 # renovate: datasource=maven depName=reactor-netty-http lookupName=io.projectreactor.netty:reactor-netty-http
-ARG REACTOR_NETTY_HTTP_TARGET_VERSION=1.2.8
+ARG REACTOR_NETTY_HTTP_TARGET_VERSION=1.2.11
 # renovate: datasource=maven depName=commons-lang3 lookupName=org.apache.commons:commons-lang3
 ARG COMMONS_LANG3_TARGET_VERSION=3.18.0
 # renovate: datasource=maven depName=spring-boot lookupName=org.springframework.boot:spring-boot
-ARG SPRING_BOOT_TARGET_VERSION=3.3.11
+ARG SPRING_BOOT_TARGET_VERSION=3.3.13
 # renovate: datasource=maven depName=commons-beanutils lookupName=commons-beanutils:commons-beanutils
 ARG COMMONS_BEANUTILS_TARGET_VERSION=1.11.0
 # renovate: datasource=maven depName=netty-codec lookupName=io.netty:netty-codec
-ARG NETTY_CODEC_TARGET_VERSION=4.1.125.Final
+ARG NETTY_CODEC_TARGET_VERSION=4.1.128.Final
 # renovate: datasource=maven depName=bc-fips lookupName=org.bouncycastle:bc-fips
-ARG BC_FIPS_TARGET_VERSION=2.1.1
+ARG BC_FIPS_TARGET_VERSION=2.1.2
 # renovate: datasource=maven depName=bcpkix-jdk15to18 lookupName=org.bouncycastle:bcpkix-jdk15to18
 ARG BCPKIX_TARGET_VERSION=1.79
 # renovate: datasource=maven depName=spring-core lookupName=org.springframework:spring-core
-ARG SPRING_CORE_TARGET_VERSION=6.2.11
+ARG SPRING_CORE_TARGET_VERSION=6.2.12
 # renovate: datasource=maven depName=netty-codec-http2 lookupName=io.netty:netty-codec-http2
-ARG NETTY_CODEC_HTTP2_VERSION=4.1.125.Final
+ARG NETTY_CODEC_HTTP2_VERSION=4.1.128.Final
 # renovate: datasource=maven depName=netty-codec-http lookupName=io.netty:netty-codec-http
-ARG NETTY_CODEC_HTTP_VERSION=4.1.125.Final
+ARG NETTY_CODEC_HTTP_VERSION=4.1.128.Final
 
 ## replace jar dependency for vulnerabilities
 COPY scripts/replace-vuln-jar.sh ${NEXUS_HOME}/bin/replace-vuln-jar.sh

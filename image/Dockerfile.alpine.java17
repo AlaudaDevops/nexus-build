@@ -78,7 +78,7 @@ COPY scripts ${NEXUS_HOME}/scripts
 # Component version upgrades - NEW versions only (OLD versions are fixed)
 # CycloneDX core Java library new version
 # renovate: datasource=maven depName=cyclonedx-core-java lookupName=org.cyclonedx:cyclonedx-core-java
-ARG CYCLONEDX_CORE_JAVA_NEW_VERSION=9.0.4
+ARG CYCLONEDX_CORE_JAVA_NEW_VERSION=9.0.5
 
 # Keycloak SAML core library new version
 # renovate: datasource=maven depName=keycloak-saml-core lookupName=org.keycloak:keycloak-saml-core

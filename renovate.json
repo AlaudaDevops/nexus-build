@@ -1,9 +1,50 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>AlaudaDevops/renovate-config:base"
+    "config:recommended",
+    "customManagers:dockerfileVersions"
   ],
   "baseBranches": [
-    "$default"
+    "alauda-81.1",
+    "alauda-76.0"
+  ],
+  "enabledManagers": ["dockerfile", "regex", "maven", "gradle", "gradle-wrapper"],
+  "ignorePaths": [
+    "**/testdata/**",
+    "testing/**",
+  ],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
+    },
+    {
+      "matchUpdateTypes": ["patch"],
+      "enabled": true,
+      "automerge": true
+    },
+    {
+      "matchDatasources":["github-releases"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "enabled": true
+    },
+    {
+      "groupName": "all patch dependencies",
+      "groupSlug": "patch-upgrades",
+      "matchPackageNames": ["*"],
+      "matchUpdateTypes": [
+        "patch"
+      ]
+    },
+    {
+      "groupName": "Apache Commons packages",
+      "groupSlug": "apache-commons-minor",
+      "matchPackageNames": ["org.apache.commons**"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "enabled": true,
+      "automerge": true,
+      "description": "Allow minor version updates for Apache Commons packages for security and stability improvements"
+    }
   ]
 }

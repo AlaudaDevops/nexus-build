@@ -95,7 +95,7 @@ ARG COMMONS_BEANUTILS_TARGET_VERSION=1.11.0
 # renovate: datasource=maven depName=netty-codec lookupName=io.netty:netty-codec
 ARG NETTY_CODEC_TARGET_VERSION=4.1.125.Final
 # renovate: datasource=maven depName=bc-fips lookupName=org.bouncycastle:bc-fips
-ARG BC_FIPS_TARGET_VERSION=2.1.1
+ARG BC_FIPS_TARGET_VERSION=2.1.2
 # renovate: datasource=maven depName=bcpkix-jdk15to18 lookupName=org.bouncycastle:bcpkix-jdk15to18
 ARG BCPKIX_TARGET_VERSION=1.79
 # renovate: datasource=maven depName=spring-core lookupName=org.springframework:spring-core

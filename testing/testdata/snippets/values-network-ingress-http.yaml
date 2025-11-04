@@ -5,6 +5,6 @@ service:
 
 ingress:
   enabled: true
-  host: nexus-test-ingress-http.example.com
+  host: nexus-test-ingress-http-<bdd.instance-id>.example.com
   defaultRule: true
 

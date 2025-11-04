@@ -4,7 +4,7 @@ global:
   images:
     nexus:
       repository: devops/sonatype-docker-nexus3
-      tag: v3.81.0-g3154c5b-3154c5
+      tag: v3.81.0-gd8b4b1c
       support_arm: true
       thirdparty: true
     busybox:

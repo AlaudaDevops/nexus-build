@@ -1,4 +1,4 @@
-FROM docker-mirrors.alauda.cn/library/golang:1.23.7-bookworm AS builder
+FROM docker-mirrors.alauda.cn/library/golang:1.25.3-bookworm AS builder
 
 WORKDIR /tools
 RUN mkdir -p /tools/bin
@@ -9,7 +9,7 @@ RUN set -eux; \
     cd /app && \
     CGO_ENABLED=0 go test -c -o /tools/bin/nexus.test ./
 
-FROM registry.alauda.cn:60070/devops/nexus-ce-test-base:latest-ca92da
+FROM registry.alauda.cn:60070/devops/nexus-ce-test-base:latest
 
 RUN mkdir -p /tools/bin
 COPY --from=builder /tools/bin /tools/bin

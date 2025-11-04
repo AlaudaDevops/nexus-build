@@ -5,9 +5,9 @@ service:
 
 ingress:
   enabled: true
-  host: nexus-test-ingress-https.example.com
+  host: nexus-test-ingress-https-<bdd.instance-id>.example.com
   defaultRule: true
   tls:
     - secretName: "test-tls-cert"
       hosts:
-      - nexus-test-ingress-https.example.com
+      - nexus-test-ingress-https-<bdd.instance-id>.example.com

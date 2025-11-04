@@ -5,7 +5,6 @@ metadata:
   annotations:
     pipelinesascode.tekton.dev/on-comment: "^((/test-all)|(/build-testing-base-image))$"
     pipelinesascode.tekton.dev/max-keep-runs: "5"
-
 spec:
   pipelineRef:
     resolver: hub

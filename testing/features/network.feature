@@ -11,7 +11,7 @@
     假定 集群已安装 ingress controller
     并且 执行 "添加本地域名解析" 脚本成功
       | command |
-      | ./hack/add-host.sh nexus-test-ingress-http.example.com <ingress-ip> |
+      | ./hack/add-host.sh nexus-test-ingress-http-<bdd.instance-id>.example.com <ingress-ip> |
     并且 命名空间 "testing-nexus-network-http-<template.{{randAlphaNum 4 | toLower}}>" 已存在
     并且 已导入 "password" 资源: "./testdata/resources/secret-password.yaml"
     当 使用 helm 部署实例到 "testing-nexus-network-http-<template.{{randAlphaNum 4 | toLower}}>" 命名空间
@@ -26,7 +26,7 @@
       """
     并且 "nexus" 可以正常访问
       """
-      url: http://admin:Nexus12345@nexus-test-ingress-http.example.com/service/rest/v1/status/check
+      url: http://admin:Nexus12345@nexus-test-ingress-http-<bdd.instance-id>.example.com/service/rest/v1/status/check
       timeout: 10m
       """
     并且 Pod 资源检查通过
@@ -34,10 +34,10 @@
       | nexus-http-nxrm-ha-0       | $.status.conditions[?(@.type == 'Ready')][0].status | True |
     并且 执行 "接受 EULA" 脚本成功
       | command |
-      | ./hack/accepted-eula.sh http://nexus-test-ingress-http.example.com admin Nexus12345 |
+      | ./hack/accepted-eula.sh http://nexus-test-ingress-http-<bdd.instance-id>.example.com admin Nexus12345 |
     并且 执行 "Nexus maven e2e" 脚本成功
       | command |
-      | ./hack/run-e2e.sh http://nexus-test-ingress-http.example.com admin Nexus12345 "test_maven_repo.py -k test_maven_proxy" |
+      | ./hack/run-e2e.sh http://nexus-test-ingress-http-<bdd.instance-id>.example.com admin Nexus12345 "test_maven_repo.py -k test_maven_proxy" |
 
   @automated
   @priority-high
@@ -47,7 +47,7 @@
     假定 集群已安装 ingress controller
     并且 执行 "添加本地域名解析" 脚本成功
       | command |
-      | ./hack/add-host.sh nexus-test-ingress-https.example.com <ingress-ip> |
+      | ./hack/add-host.sh nexus-test-ingress-https-<bdd.instance-id>.example.com <ingress-ip> |
     并且 命名空间 "testing-nexus-network-https-<template.{{randAlphaNum 4 | toLower}}>" 已存在
     并且 已导入 "password" 资源: "./testdata/resources/secret-password.yaml"
     并且 已导入 "tls 证书" 资源: "./testdata/resources/secret-tls-cert.yaml"
@@ -62,7 +62,7 @@
       """
     并且 "nexus" 可以正常访问
       """
-      url: https://admin:Nexus12345@nexus-test-ingress-https.example.com/service/rest/v1/status/check
+      url: https://admin:Nexus12345@nexus-test-ingress-https-<bdd.instance-id>.example.com/service/rest/v1/status/check
       timeout: 10m
       """
     并且 Pod 资源检查通过
@@ -70,10 +70,10 @@
       | nexus-https-nxrm-ha-0       | $.status.conditions[?(@.type == 'Ready')][0].status | True |
     并且 执行 "接受 EULA" 脚本成功
       | command |
-      | ./hack/accepted-eula.sh https://nexus-test-ingress-https.example.com admin Nexus12345 |
+      | ./hack/accepted-eula.sh https://nexus-test-ingress-https-<bdd.instance-id>.example.com admin Nexus12345 |
     并且 执行 "Nexus npm e2e" 脚本成功
       | command |
-      | ./hack/run-e2e.sh https://nexus-test-ingress-https.example.com admin Nexus12345 test_npm_repo.py |
+      | ./hack/run-e2e.sh https://nexus-test-ingress-https-<bdd.instance-id>.example.com admin Nexus12345 test_npm_repo.py |
 
   @automated
   @priority-high

@@ -11,7 +11,6 @@
   "enabledManagers": ["dockerfile", "regex", "maven", "gradle", "gradle-wrapper"],
   "ignorePaths": [
     "**/testdata/**",
-    "testing/**",
   ],
   "labels": ["dependencies"],
   "packageRules": [

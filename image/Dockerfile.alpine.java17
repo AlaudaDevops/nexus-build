@@ -94,7 +94,7 @@ ARG PAX_URL_AETHER_NEW_VERSION=2.6.17
 
 # Apache Commons Lang3 library new version
 # renovate: datasource=maven depName=commons-lang3 lookupName=org.apache.commons:commons-lang3
-ARG COMMONS_LANG3_NEW_VERSION=3.19.0
+ARG COMMONS_LANG3_NEW_VERSION=3.20.0
 
 # Commons BeanUtils library new version
 # renovate: datasource=maven depName=commons-beanutils lookupName=commons-beanutils:commons-beanutils

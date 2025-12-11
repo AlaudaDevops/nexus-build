@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM build-harbor.alauda.cn/ops/alpine:3.20.6-alauda-202502271510
+FROM build-harbor.alauda.cn/ops/alpine:3.21.5-alauda-202512020944
 
 LABEL name="Nexus Repository Manager" \
       maintainer="Sonatype <support@sonatype.com>" \
@@ -78,7 +78,7 @@ COPY scripts ${NEXUS_HOME}/scripts
 # Component version upgrades - NEW versions only (OLD versions are fixed)
 # CycloneDX core Java library new version
 # renovate: datasource=maven depName=cyclonedx-core-java lookupName=org.cyclonedx:cyclonedx-core-java
-ARG CYCLONEDX_CORE_JAVA_NEW_VERSION=9.0.5
+ARG CYCLONEDX_CORE_JAVA_NEW_VERSION=11.0.1
 
 # Keycloak SAML core library new version
 # renovate: datasource=maven depName=keycloak-saml-core lookupName=org.keycloak:keycloak-saml-core
@@ -124,6 +124,7 @@ RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/cyclonedx/cyclonedx-core-java
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME commons-beanutils/commons-beanutils 1.9.4 ${COMMONS_BEANUTILS_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME commons-fileupload/commons-fileupload 1.5 ${COMMONS_FILEUPLOAD_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/bouncycastle/bcpkix-jdk15to18 1.78.1 ${BCPKIX_JDK15TO18_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/tika/tika-core 1.28.4 3.2.2 https://github.com/AlaudaDevops/tika/releases/download/v3.2.2/tika-core-3.2.2.jar \
   && cp $NEXUS_HOME/system/org/bouncycastle/bcpkix-jdk15to18/${BCPKIX_JDK15TO18_NEW_VERSION}/bcpkix-jdk15to18-${BCPKIX_JDK15TO18_NEW_VERSION}.jar $NEXUS_HOME/lib/bcpkix-jdk15to18-${BCPKIX_JDK15TO18_NEW_VERSION}.jar && rm -rf $NEXUS_HOME/lib/bcpkix-jdk15to18-1.78.1.jar \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME io/grpc/grpc-netty-shaded 1.62.2 ${GRPC_NETTY_SHADED_NEW_VERSION}
 # update jetty

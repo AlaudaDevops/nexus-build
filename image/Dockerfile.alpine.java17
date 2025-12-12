@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM build-harbor.alauda.cn/ops/alpine:3.21.5-alauda-202512020944
+FROM build-harbor.alauda.cn/ops/alpine:3.21.5-alauda-202512020944 as builder
 
 LABEL name="Nexus Repository Manager" \
       maintainer="Sonatype <support@sonatype.com>" \
@@ -138,6 +138,22 @@ RUN echo "#!/bin/bash" >> ${SONATYPE_DIR}/start-nexus-repository-manager.sh \
    && sed -e '/^nexus-context/ s:$:${NEXUS_CONTEXT}:' -i ${NEXUS_HOME}/etc/nexus-default.properties
 
 RUN apk del gzip shadow
+# remove sniff tools
+RUN set +e; \
+  ls -d /usr/bin/* | grep -E "cpp|readelf|gcc|nc|netcat" | xargs rm
+
+FROM build-harbor.alauda.cn/ops/alpine:3.21.5-alauda-202512020944
+
+COPY --from=builder / /
+
+ENV SONATYPE_DIR=/opt/sonatype
+ENV NEXUS_HOME=${SONATYPE_DIR}/nexus \
+    NEXUS_DATA=/nexus-data \
+    NEXUS_CONTEXT='' \
+    SONATYPE_WORK=${SONATYPE_DIR}/sonatype-work \
+    DOCKER_TYPE='alpine'
+
+WORKDIR ${SONATYPE_DIR}
 
 VOLUME ${NEXUS_DATA}
 

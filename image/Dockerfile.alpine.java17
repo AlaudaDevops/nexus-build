@@ -138,6 +138,9 @@ RUN echo "#!/bin/bash" >> ${SONATYPE_DIR}/start-nexus-repository-manager.sh \
    && sed -e '/^nexus-context/ s:$:${NEXUS_CONTEXT}:' -i ${NEXUS_HOME}/etc/nexus-default.properties
 
 RUN apk del gzip shadow
+# remove sniff tools
+RUN set +e; \
+  ls -d /usr/bin/* | grep -E "cpp|readelf|gcc|nc|netcat" | xargs rm
 
 VOLUME ${NEXUS_DATA}
 

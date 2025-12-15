@@ -1,0 +1,10 @@
+Nexus Image
+
+Apache License 2.0 components:
+- Dockerfile.alpine.java17 and helper scripts are derived from the Sonatype docker-nexus3 project. Copyright (c) 2016-present Sonatype, Inc.
+
+Additional license terms:
+- Nexus Repository Manager binaries downloaded during image build are subject to Sonatype commercial/EULA terms; distribution requires a valid license from Sonatype.
+- Some artifacts packaged with Nexus may be provided under Elastic License 2.0; see ELASTIC-LICENSE-2.0.txt. The license prohibits offering the software as a hosted or managed service that exposes substantial functionality.
+
+Modifications within this directory are provided under the Apache License, Version 2.0 unless otherwise noted.

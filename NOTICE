@@ -1,0 +1,9 @@
+Nexus Build
+
+This distribution includes components licensed under the Apache License, Version 2.0:
+- Sonatype Nexus Repository Helm chart assets (chart/), Copyright (c) 2020-present Sonatype, Inc.
+- Sonatype docker-nexus3 Dockerfile and helper scripts adapted in image/, Copyright (c) 2016-present Sonatype, Inc.
+
+Additional license notices:
+- Nexus Repository Manager binaries fetched via NEXUS_DOWNLOAD_URL are subject to Sonatype commercial/EULA terms; ensure valid entitlement before use or redistribution.
+- Certain bundled components may be licensed under Elastic License 2.0; see image/ELASTIC-LICENSE-2.0.txt for the full terms, including the restriction on offering the software as a hosted or managed service.

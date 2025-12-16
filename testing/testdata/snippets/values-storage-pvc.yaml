@@ -1,2 +1,0 @@
-pvc:
-  existingClaim: "nexus-pvc"

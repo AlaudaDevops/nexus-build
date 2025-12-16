@@ -1,5 +1,0 @@
-hostPath: /tmp/nexus-<template.{{randAlphaNum 10}}>
-
-statefulset:
-  nodeSelector:
-    kubernetes.io/hostname: <node.name.random>

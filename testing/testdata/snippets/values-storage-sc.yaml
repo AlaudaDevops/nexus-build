@@ -1,6 +1,0 @@
-storageClass:
-  name: <storage-class>
-pvc:
-  volumeClaimTemplate:
-    enabled: true
-  storage: 2Gi

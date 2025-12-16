@@ -14,7 +14,7 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo):
             create_server_config("nexus", nexus_config.username, nexus_config.password),
         ]
         mirrors_configs = [
-            create_mirror_config("ucloud", "central", "http://ucloud-nexus.alauda.cn:8081", "maven-central")
+            create_mirror_config("ucloud", "central", os.environ.get("MACVEN_MIRROR_REGISTRY", "http://ucloud-nexus.alauda.cn:8081"), "maven-central")
         ]
         settings_path = create_settings(server_configs, mirrors_configs)
         publish_xml_path = project_path / 'publish.xml'
@@ -58,7 +58,7 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo):
         ]
         mirrors_configs = [
             create_mirror_config("nexus","nexus", nexus_config.url, hosted_repo),
-            create_mirror_config("ucloud", "central", "http://ucloud-nexus.alauda.cn:8081", "maven-central")
+            create_mirror_config("ucloud", "central", os.environ.get("MACVEN_MIRROR_REGISTRY", "http://ucloud-nexus.alauda.cn:8081"), "maven-central")
         ]
         settings_path = create_settings(server_configs, mirrors_configs)
         project_path = Path(f'test_projects/maven')
@@ -80,7 +80,7 @@ def test_maven_proxy(nexus_client, nexus_config):
             "maven",
             "maven-central",
             "proxy",
-            "http://ucloud-nexus.alauda.cn:8081/repository/maven-central/"
+            r"{}/repository/maven-central/".format(os.environ.get("MACVEN_MIRROR_REGISTRY", "http://ucloud-nexus.alauda.cn:8081"))
         )
 
     with allure.step('Download dependency'):
@@ -177,5 +177,5 @@ def hosted_repo(nexus_client):
 def proxy_repo(nexus_client):
     t = time.strftime("%Y%m%d-%H%M%S")
     repo_name = f"maven-test-repo-{t}"
-    nexus_client.create_repository("maven", repo_name, "proxy", "http://ucloud-nexus.alauda.cn:8081/repository/maven-central/")
+    nexus_client.create_repository("maven", repo_name, "proxy", r"{}/repository/maven-central/".format(os.environ.get("MACVEN_MIRROR_REGISTRY", "http://ucloud-nexus.alauda.cn:8081")))
     return repo_name

@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y ca-certificates tzdata bash locales mak
 ARG YQ_VERSION=4.25.2
 ARG KUBECTL_VERSION=1.28.2
 ARG HELM_VERSION=3.12.3
-ARG MAVEN_VERSION=3.9.11
+ARG MAVEN_VERSION=3.9.12
 ARG JQ_VERSION=1.8.1
 
 RUN set -eux; \

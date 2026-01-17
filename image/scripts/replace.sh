@@ -14,6 +14,12 @@ OLD_VERSION="$3"
 NEW_VERSION="$4"
 JAR_URL="$5"
 
+# Skip if versions are the same
+if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
+    echo "Skipping: OLD_VERSION and NEW_VERSION are the same ($OLD_VERSION)"
+    exit 0
+fi
+
 JAR_NAME=$(basename $JAR_PATH)
 
 # 1. Download new JAR
@@ -46,7 +52,6 @@ else
     curl -L -o $NEXUS_HOME/system/$JAR_PATH/$NEW_VERSION/$JAR_NAME-$NEW_VERSION.jar \
       https://repo1.maven.org/maven2/$JAR_PATH/$NEW_VERSION/$JAR_NAME-$NEW_VERSION.jar
 fi
-
 
 # 2. Update version references in configuration files
 echo "Updating configuration files $JAR_NAME/$OLD_VERSION|$JAR_NAME/$NEW_VERSION ..."

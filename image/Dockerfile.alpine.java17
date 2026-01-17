@@ -75,60 +75,20 @@ RUN sed -i '/^-Xms/d;/^-Xmx/d;/^-XX:MaxDirectMemorySize/d' $NEXUS_HOME/bin/nexus
 
 COPY scripts ${NEXUS_HOME}/scripts
 
-# Component version upgrades - NEW versions only (OLD versions are fixed)
-# CycloneDX core Java library new version
-# renovate: datasource=maven depName=cyclonedx-core-java lookupName=org.cyclonedx:cyclonedx-core-java
-ARG CYCLONEDX_CORE_JAVA_NEW_VERSION=11.0.1
-
-# Keycloak SAML core library new version
-# renovate: datasource=maven depName=keycloak-saml-core lookupName=org.keycloak:keycloak-saml-core
-ARG KEYCLOAK_SAML_CORE_NEW_VERSION=22.0.13
-
-# Apache Velocity engine core library new version
-# renovate: datasource=maven depName=velocity-engine-core lookupName=org.apache.velocity:velocity-engine-core
-ARG VELOCITY_ENGINE_CORE_NEW_VERSION=2.4.1
-
-# Pax URL Aether library new version
-# renovate: datasource=maven depName=pax-url-aether lookupName=org.ops4j.pax.url:pax-url-aether
-ARG PAX_URL_AETHER_NEW_VERSION=2.6.17
-
-# Apache Commons Lang3 library new version
-# renovate: datasource=maven depName=commons-lang3 lookupName=org.apache.commons:commons-lang3
-ARG COMMONS_LANG3_NEW_VERSION=3.20.0
-
-# Commons BeanUtils library new version
-# renovate: datasource=maven depName=commons-beanutils lookupName=commons-beanutils:commons-beanutils
-ARG COMMONS_BEANUTILS_NEW_VERSION=1.11.0
-
-# Commons FileUpload library new version
-# renovate: datasource=maven depName=commons-fileupload lookupName=commons-fileupload:commons-fileupload
-ARG COMMONS_FILEUPLOAD_NEW_VERSION=1.6.0
+# Jetty web server new version
+# renovate: datasource=maven depName=jetty lookupName=org.eclipse.jetty:jetty
+ARG JETTY_NEW_VERSION=9.4.58.v20250814
 
 # BouncyCastle PKIX JDK15to18 library new version
 # renovate: datasource=maven depName=bcpkix-jdk15to18 lookupName=org.bouncycastle:bcpkix-jdk15to18
 ARG BCPKIX_JDK15TO18_NEW_VERSION=1.79
 
-# gRPC Netty Shaded library new version
-# renovate: datasource=maven depName=grpc-netty-shaded lookupName=io.grpc:grpc-netty-shaded
-ARG GRPC_NETTY_SHADED_NEW_VERSION=1.75.0
+RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/tika/tika-core 1.28.4 3.2.2 https://github.com/AlaudaDevops/tika/releases/download/v3.2.2/tika-core-3.2.2.jar \
+  && $NEXUS_HOME/scripts/replace-lib.sh $NEXUS_HOME org.bouncycastle bcpkix-jdk15to18 1.78.1 ${BCPKIX_JDK15TO18_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/replace-jetty.sh $NEXUS_HOME 9.4.56.v20240826 ${JETTY_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/upgrade-dependencies.sh \
+  && rm -rf ${NEXUS_HOME}/scripts/*.sh
 
-# Jetty web server new version
-# renovate: datasource=maven depName=jetty lookupName=org.eclipse.jetty:jetty
-ARG JETTY_NEW_VERSION=9.4.58.v20250814
-
-RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/cyclonedx/cyclonedx-core-java 7.3.2 ${CYCLONEDX_CORE_JAVA_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/keycloak/keycloak-saml-core 18.0.2 ${KEYCLOAK_SAML_CORE_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/velocity/velocity-engine-core 2.3 ${VELOCITY_ENGINE_CORE_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/ops4j/pax/url/pax-url-aether 2.6.12 ${PAX_URL_AETHER_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/commons/commons-lang3 3.13.0 ${COMMONS_LANG3_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME commons-beanutils/commons-beanutils 1.9.4 ${COMMONS_BEANUTILS_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME commons-fileupload/commons-fileupload 1.5 ${COMMONS_FILEUPLOAD_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/bouncycastle/bcpkix-jdk15to18 1.78.1 ${BCPKIX_JDK15TO18_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/tika/tika-core 1.28.4 3.2.2 https://github.com/AlaudaDevops/tika/releases/download/v3.2.2/tika-core-3.2.2.jar \
-  && cp $NEXUS_HOME/system/org/bouncycastle/bcpkix-jdk15to18/${BCPKIX_JDK15TO18_NEW_VERSION}/bcpkix-jdk15to18-${BCPKIX_JDK15TO18_NEW_VERSION}.jar $NEXUS_HOME/lib/bcpkix-jdk15to18-${BCPKIX_JDK15TO18_NEW_VERSION}.jar && rm -rf $NEXUS_HOME/lib/bcpkix-jdk15to18-1.78.1.jar \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME io/grpc/grpc-netty-shaded 1.62.2 ${GRPC_NETTY_SHADED_NEW_VERSION}
-# update jetty
-RUN $NEXUS_HOME/scripts/replace-jetty.sh $NEXUS_HOME 9.4.56.v20240826 ${JETTY_NEW_VERSION}
 
 
 RUN echo "#!/bin/bash" >> ${SONATYPE_DIR}/start-nexus-repository-manager.sh \

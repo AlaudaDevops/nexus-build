@@ -38,10 +38,10 @@ spec:
       value: "{{ pull_request_number }}"
 
     - name: image-repository
-      value: build-harbor.alauda.cn/devops/sonatype-docker-nexus3
+      value: build-harbor.alauda.cn/devops/sonatype-nexus3
 
-    - name: dockerfile-path
-      value: image/Dockerfile.alpine.java17
+    - name: containerfile-path
+      value: image/Containerfile.alpine.java17
 
     - name: context
       value: "image"
@@ -55,7 +55,7 @@ spec:
     - name: file-list-for-commit-sha
       value:
         - .tekton/build-image.yaml
-        - image/Dockerfile.alpine.java17
+        - image/Containerfile.alpine.java17
     - name: update-files-based-on-image
       value: |
         yq eval ".global.images.nexus.tag = \"${IMAGE_TAG}\"" -i chart/values.yaml
@@ -68,7 +68,7 @@ spec:
           resources:
             requests:
               storage: 1Gi
-    - name: dockerconfig
+    - name: registryconfig
       secret:
         secretName: build-harbor.kauto.docfj
     # This secret will be replaced by the pac controller

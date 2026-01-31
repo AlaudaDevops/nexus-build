@@ -33,8 +33,8 @@ spec:
     - name: image-repository
       value: build-harbor.alauda.cn/devops/nexus-ce-test-base
 
-    - name: dockerfile-path
-      value: testing/Dockerfile.base
+    - name: containerfile-path
+      value: testing/Containerfile.base
 
     - name: context
       value: "testing"
@@ -49,7 +49,7 @@ spec:
     - name: file-list-for-commit-sha
       value:
         - .tekton/test-base-image.yaml
-        - testing/Dockerfile.base
+        - testing/Containerfile.base
   workspaces:
     - name: source
       volumeClaimTemplate:
@@ -59,7 +59,7 @@ spec:
           resources:
             requests:
               storage: 1Gi
-    - name: dockerconfig
+    - name: registryconfig
       secret:
         secretName: build-harbor.kauto.docfj
     # This secret will be replaced by the pac controller

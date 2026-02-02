@@ -50,7 +50,7 @@ spec:
       value: "v3.76.0-g${ShortSha}"
 
     - name: ignore-trivy-scan
-      value: "true"
+      value: "false"
 
     - name: file-list-for-commit-sha
       value:

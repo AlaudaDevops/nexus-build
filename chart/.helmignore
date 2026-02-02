@@ -7,4 +7,3 @@ test/*
 testing/*
 override.yaml
 *.sh
-Dockerfile

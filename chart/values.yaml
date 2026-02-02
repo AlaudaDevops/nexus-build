@@ -3,8 +3,8 @@ global:
     address: registry.alauda.cn:60080
   images:
     nexus:
-      repository: devops/sonatype-docker-nexus3
-      tag: v3.76.0-g2f0dde2
+      repository: devops/sonatype-nexus3
+      tag: v3.76.0-g4a8c532
       support_arm: true
       thirdparty: true
     busybox:
@@ -158,7 +158,7 @@ statefulset:
     failureThreshold: 6
     path: /
   imagePullSecrets:
-    # -- The base64 encoded dockerconfigjson
+    # -- The base64 encoded registryconfig json
     secret: ""
     # -- Use an existing imagePullSecret created by a secrets operator
     existingSecret:

@@ -53,7 +53,7 @@ spec:
     - name: build-test-image
       value:
         image-repository: build-harbor.alauda.cn/devops/nexus-ce-test
-        dockerfile-path: testing/Dockerfile
+        containerfile-path: testing/Containerfile
     - name: tag-template
       value: "v3.76.0-g${ShortSha}"
     - name: test
@@ -62,7 +62,7 @@ spec:
           set -x
           export KUBECONFIG=$(workspaces.config.path)/vcluster-config
           kubectl config view
-          
+
           cd $(workspaces.source.path)/testing
           echo "run integration tests..."
           export GODOG_ARGS="--godog.concurrency=1 --godog.format=allure"
@@ -112,7 +112,7 @@ spec:
     - name: upload-conf
       secret:
         secretName: upload-allure-report-conf
-    - name: dockerconfig
+    - name: registryconfig
       secret:
         secretName: build-harbor.kauto.docfj
     - name: basic-auth
@@ -121,4 +121,3 @@ spec:
     - name: gitversion-config
       configMap:
         name: gitversion-config
-

@@ -73,6 +73,7 @@ RUN curl -L ${NEXUS_DOWNLOAD_URL} --output nexus-${NEXUS_VERSION}-unix.tar.gz \
 # Removing java memory settings from nexus.vmoptions since now we use INSTALL4J_ADD_VM_PARAMS
 RUN sed -i '/^-Xms/d;/^-Xmx/d;/^-XX:MaxDirectMemorySize/d' $NEXUS_HOME/bin/nexus.vmoptions
 
+COPY jar /tmp/jar
 COPY scripts ${NEXUS_HOME}/scripts
 
 # Component version upgrades - NEW versions only (OLD versions are fixed)
@@ -129,6 +130,9 @@ RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/cyclonedx/cyclonedx-core-java
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME io/grpc/grpc-netty-shaded 1.62.2 ${GRPC_NETTY_SHADED_NEW_VERSION}
 # update jetty
 RUN $NEXUS_HOME/scripts/replace-jetty.sh $NEXUS_HOME 9.4.56.v20240826 ${JETTY_NEW_VERSION}
+
+# Update the JAR files that fix vulnerabilities through compiling nexus-public
+RUN $NEXUS_HOME/scripts/replace-nexus-jar.sh
 
 
 RUN echo "#!/bin/bash" >> ${SONATYPE_DIR}/start-nexus-repository-manager.sh \

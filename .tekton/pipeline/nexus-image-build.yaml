@@ -1,0 +1,340 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: nexus-image-build
+spec:
+  workspaces:
+    - name: source
+      description: "Workspace for storing source code"
+    - name: basic-auth
+      description: "Workspace for git basic authentication"
+    - name: registryconfig
+      description: "Workspace for Container configuration"
+    - name: cache
+      description: "Workspace for cache files"
+  params:
+    - name: git-revision
+      description: |
+        Git revision object with url, branch, commit, and pull request information.
+        * url: The url of the git repository
+        * branch: The source branch of the git repository
+        * commit: The commit of the git repository
+        * pull-request-number: The pull request number
+        * pull-request-source: The source branch of the pull request
+        * pull-request-target: The target branch of the pull request
+      type: object
+      properties:
+        url: { type: string }
+        branch: { type: string }
+        commit: { type: string }
+        pull-request-number: {} # Pull request number.
+        pull-request-source: {} # Pull request source.
+        pull-request-target: {} # Pull request target branch.
+      default:
+        pull-request-number: ""
+        pull-request-source: ""
+        pull-request-target: ""
+    - name: image-scan-gate-enabled
+      description: Determine whether to skip the image scan step
+      type: string
+      default: "false"
+    - name: clean-cache
+      type: string
+      default: "false"
+  tasks:
+    # git-clone
+    - name: git-clone
+      params:
+        - name: url
+          value: $(params.git-revision.url)
+        - name: revision
+          value: $(params.git-revision.branch)
+        - name: depth
+          value: 1
+        - name: pr-number
+          value: $(params.git-revision.pull-request-number)
+      taskRef:
+        resolver: hub
+        params:
+          - name: catalog
+            value: catalog
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: version
+            value: "0.9"
+      timeout: 10m0s
+      workspaces:
+        - name: output
+          workspace: source
+        - name: basic-auth
+          workspace: basic-auth
+    - name: get-git-meta
+      timeout: 10m
+      retries: 0
+      runAfter:
+        - git-clone
+      params:
+        - name: image
+          value: registry.alauda.cn:60080/devops/nonroot/chainguard/git:latest
+        - name: imagePullPolicy
+          value: Always
+        - name: script
+          value: |
+            #!/bin/bash
+            set -e
+
+            # Add the source directory to the safe.directory list
+            git config --global --add safe.directory $(workspaces.source.path)
+
+
+            cat <<EOF > $(results.object-result.path)
+            {
+              "commit_date": "$(git log -1 --pretty=%ct)",
+              "commit_sha": "$(git rev-parse HEAD)",
+              "short_id": "$(git rev-parse --short HEAD)",
+              "message": "gitlab commit meta"
+            }
+            EOF
+      taskRef:
+        resolver: hub
+        params:
+          - name: catalog
+            value: catalog
+          - name: kind
+            value: task
+          - name: name
+            value: run-script
+          - name: version
+            value: "0.1"
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-nexus-app
+      timeout: 2h
+      retries: 0
+      runAfter:
+        - git-clone
+      params:
+        - name: script
+          value: |
+            #!/bin/bash
+            set -xe
+
+            # Create cache source directories
+            mkdir -p $(workspaces.cache.path)/yarncache
+            mkdir -p $(workspaces.cache.path)/m2cache
+
+            # Remove target paths if they exist
+            rm -rf $HOME/.m2/repository
+            rm -rf $(workspaces.source.path)/source/.yarn/cache
+            mkdir -p $(workspaces.source.path)/source/.yarn
+            mkdir -p $HOME/.m2
+
+            # Create symlinks
+            ln -s $(workspaces.cache.path)/m2cache $HOME/.m2/repository
+            ln -s $(workspaces.cache.path)/yarncache $(workspaces.source.path)/source/.yarn/cache
+
+            if [ "$(params.clean-cache)" == "true" ]; then
+              rm -rf $(workspaces.cache.path)/yarncache/*
+              rm -rf $(workspaces.cache.path)/m2cache/*
+            fi
+
+            cd $(workspaces.source.path)/source/
+            yarn -v
+            yarn install
+
+            ./mvnw -pl plugins/nexus-coreui-plugin,components/nexus-ui-plugin,components/nexus-rapture -am clean install -Dpublic -DskipTests -s ./settings.xml
+
+            # nexus-public only contains nexus code and cannot be used directly.
+            # To upgrade the problematic js plugins, we still built the complete jar package. Only copy the jar packages that contain dependencies on the vulnerable js packages to the image directory.
+            # When building the image, replace the corresponding jar packages in the image.
+            mkdir -p $(workspaces.source.path)/image/jar/
+            cp $(workspaces.source.path)/source/components/nexus-ui-plugin/target/nexus-ui-plugin-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-ui-plugin-3.76.0-03.jar
+            cp $(workspaces.source.path)/source/components/nexus-rapture/target/nexus-rapture-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-rapture-3.76.0-03.jar
+            cp $(workspaces.source.path)/source/plugins/nexus-coreui-plugin/target/nexus-coreui-plugin-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-coreui-plugin-3.76.0-03.jar
+      workspaces:
+        - name: source
+          workspace: source
+        - name: cache
+          workspace: cache
+      taskSpec:
+        workspaces:
+          - name: source
+          - name: cache
+        params:
+          - name: script
+            description: >-
+              Customized script to execute.
+              The task will enforce running the script as a non-root user.
+              If the image used in this task defaults to starting with the root user,
+              additional configuration will be required to set up a non-root user.
+              Please refer to the task's README.md document for details.
+            type: string
+            default:
+        steps:
+          - name: run-script
+            # 需要提前通过 build-base-image 流水线构建，基础镜像。
+            image: build-harbor.alauda.cn/devops/nexus-ce-base:latest
+            imagePullPolicy: Always
+            computeResources:
+              requests:
+                cpu: "1"
+                memory: "1Gi"
+              limits:
+                cpu: "4"
+                memory: "4Gi"
+            script: |
+              #!/bin/sh
+              RUN_ON=`cat /proc/$$/comm`
+              if [ "$RUN_ON" != "bash" ] && command -v bash >/dev/null 2>&1; then
+                  exec bash "$0" $@
+              fi
+              set -eu
+
+              $(params.script)
+    - name: build-nexus-image
+      timeout: 1h
+      retries: 2
+      taskRef:
+        resolver: hub
+        params:
+          - name: catalog
+            value: extras
+          - name: kind
+            value: task
+          - name: name
+            value: buildx
+          - name: version
+            value: "0.1"
+      runAfter:
+        - build-nexus-app
+      workspaces:
+        - name: source
+          workspace: source
+        - name: registryconfig
+          workspace: registryconfig
+      params:
+        - name: reuse-artifact
+          value: "true"
+        - name: buildx-image
+          value: registry.alauda.cn:60080/devops/nonroot/alauda-buildx:latest
+        - name: image-url
+          value: build-harbor.alauda.cn/devops/sonatype-nexus3
+        - name: image-tags
+          value:
+            - v3.76.0-g$(tasks.get-git-meta.results.object-result.short_id)
+        - name: containerfile
+          value: image/Containerfile.alpine.java17
+        - name: context
+          value: image
+    - name: image-scan
+      timeout: 60m
+      retries: 2
+      taskRef:
+        resolver: katanomi.hub
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: trivy-image-scan
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: targets-result-limit
+          value: 6
+        - name: targets
+          value:
+            - $(tasks.build-nexus-image.results.image-digests[0])
+        - name: quality-gate-rules
+          value:
+            - severity=High
+        - name: quality-gate
+          value: "$(params.image-scan-gate-enabled)"
+        - name: scan-flags
+          value:
+            - timeout=30m
+            - vulnerability.ignore-unfixed=true
+            - db.skip-update=false
+            - db.repository=build-harbor.alauda.cn/ops/aquasecurity/trivy-db
+    - name: update-chart-values
+      timeout: 5m
+      retries: 2
+      runAfter:
+        - image-scan
+      taskRef:
+        resolver: hub
+        params:
+          - name: catalog
+            value: extras
+          - name: kind
+            value: task
+          - name: name
+            value: git-cli
+          - name: version
+            value: "0.4"
+      workspaces:
+        - name: source
+          workspace: source
+        - name: basic-auth
+          workspace: basic-auth
+      when:
+        - input: $(params.git-revision.pull-request-number)
+          operator: in
+          values:
+            - ""
+            - " "
+      params:
+        - name: BASE_IMAGE
+          value: registry.alauda.cn:60080/devops/nonroot/chainguard/git:latest
+        - name: GIT_USER_NAME
+          value: "Alauda Bot"
+        - name: GIT_USER_EMAIL
+          value: "alaudabot@alauda.io"
+        - name: USER_HOME
+          value: "/home/git"
+        - name: VERBOSE
+          value: "true"
+        - name: GIT_SCRIPT
+          value: |-
+            set -ex
+
+            cd $(workspaces.source.path)
+            git config --global --add safe.directory $(workspaces.source.path)
+
+            images=(
+              $(tasks.build-nexus-image.results.image-digests[0])
+            )
+
+            for image in "${images[@]}"; do
+              echo "===> update chart values $image"
+              bash ./hack/update-image-tag.sh $image chart/values.yaml
+            done
+
+            git status
+
+            # check if the chart values is changed
+            if git diff --quiet -- chart/values.yaml; then
+              echo "No changes to commit"
+              git status
+              exit 0
+            fi
+
+            git add chart/values.yaml
+
+            # Reset working directory to match staging area.
+            # This ensures only chart/values.yaml changes are committed,
+            # while cleaning any accidental modifications to other files.
+            # Since chart/values.yaml is already staged, its changes are preserved.
+            git checkout .
+
+            COMMIT_MESSAGE="Auto-commit by alaudabot in edge [ci skip] - $(context.taskRun.namespace)/$(context.taskRun.name)"
+
+            # Commit the changes
+            git-push-commit.sh \
+              --revision $(params.git-revision.branch) \
+              --source-path $(workspaces.source.path) \
+              --output-path $(results.commit.path) \
+              --message "${COMMIT_MESSAGE}"

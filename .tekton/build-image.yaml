@@ -1,64 +1,38 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  name: build-nexus-image
+  name: nexus-image
   annotations:
-    pipelinesascode.tekton.dev/on-comment: "^((/test-all)|(/build-test-image)|(/test-multi.*\ build-test-image.*))$"
-    pipelinesascode.tekton.dev/max-keep-runs: "5"
+    pipelinesascode.tekton.dev/on-comment: "^((/test-all)|(/build-image))"
     pipelinesascode.tekton.dev/on-cel-expression: |-
       target_branch.matches("^(main|release-.*|alauda-.*)$") &&
       !last_commit_title.contains("Auto-commit") &&
       (
+        "source/**".pathChanged() ||
         "image/**".pathChanged() ||
-        ".tekton/build-image.yaml".pathChanged()
+        ".tekton/build-image.yaml".pathChanged() ||
+        ".tekton/pipeline/nexus-image-build".pathChanged()
       )
+    pipelinesascode.tekton.dev/max-keep-runs: "5"
 spec:
+  timeouts:
+    pipeline: "2h"
+
   pipelineRef:
-    resolver: hub
-    params:
-      - name: catalog
-        value: alauda
-      - name: type
-        value: tekton
-      - name: kind
-        value: pipeline
-      - name: name
-        value: clone-image-build-test-scan
-      - name: version
-        value: "0.2"
+    name: nexus-image-build
 
   params:
-    - name: git-url
-      value: "{{ repo_url }}"
     - name: git-revision
-      value: "{{ source_branch }}"
-    - name: git-commit
-      value: "{{ revision }}"
-    - name: pull-request-number
-      value: "{{ pull_request_number }}"
-
-    - name: image-repository
-      value: build-harbor.alauda.cn/devops/sonatype-nexus3
-
-    - name: containerfile-path
-      value: image/Containerfile.alpine.java17
-
-    - name: context
-      value: "image"
-
-    - name: tag-template
-      value: "v3.76.0-g${ShortSha}"
-
-    - name: ignore-trivy-scan
-      value: "true"
-
-    - name: file-list-for-commit-sha
       value:
-        - .tekton/build-image.yaml
-        - image/Containerfile.alpine.java17
-    - name: update-files-based-on-image
-      value: |
-        yq eval ".global.images.nexus.tag = \"${IMAGE_TAG}\"" -i chart/values.yaml
+        url: "{{ repo_url }}"
+        branch: "{{ source_branch }}"
+        commit: "{{ revision }}"
+        pull-request-number: "{{ pull_request_number }}"
+        pull-request-source: "{{ source_branch }}"
+        pull-request-target: "{{ target_branch }}"
+    - name: clean-cache
+      value: "{{ clean-cache }}"
+
   workspaces:
     - name: source
       volumeClaimTemplate:
@@ -67,33 +41,37 @@ spec:
             - ReadWriteMany
           resources:
             requests:
-              storage: 1Gi
+              storage: 2Gi
+    - name: basic-auth
+      secret:
+        secretName: github-credentials
     - name: registryconfig
       secret:
         secretName: build-harbor.kauto.docfj
-    # This secret will be replaced by the pac controller
-    - name: basic-auth
-      secret:
-        secretName: "{{ git_auth_secret }}"
-    - name: gitversion-config
-      configMap:
-        name: gitversion-config
+    - name: cache
+      persistentVolumeClaim:
+        claimName: build-cache-nexus
 
   taskRunTemplate:
     # 让所有任务都以非 root 用户运行。
     podTemplate:
       securityContext:
-        runAsUser: 65532
-        runAsGroup: 65532
         fsGroup: 65532
         fsGroupChangePolicy: "OnRootMismatch"
 
   taskRunSpecs:
-    - pipelineTaskName: prepare-build
+    - pipelineTaskName: build-nexus-app
+      computeResources:
+        limits:
+          cpu: "6"
+          memory: 6Gi
+    - pipelineTaskName: build-nexus-image
+      computeResources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+    - pipelineTaskName: image-scan
       computeResources:
         limits:
           cpu: "4"
           memory: 4Gi
-        requests:
-          cpu: "2"
-          memory: 2Gi

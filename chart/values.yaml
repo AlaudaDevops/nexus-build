@@ -1,4 +1,7 @@
 global:
+  permission:
+    initContainer:
+      enabled: true
   registry:
     address: registry.alauda.cn:60080
   images:
@@ -339,14 +342,22 @@ secret:
     rds:
       arn: arn:aws:secretsmanager:us-east-1:000000000000:secret:nxrmrds-cred-nexus
 nexus:
+  podSecurityContext:
+    runAsUser: 200
+    runAsGroup: 200
+    fsGroup: 200
   # Default the pods UID and GID to match the nexus3 container.
   # Customize or remove these values from the securityContext as appropriate for
   # your deployment environment.
   securityContext:
     runAsUser: 200
     runAsGroup: 200
+    capabilities:
+      drop: ["ALL"]
     seccompProfile:
       type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
   properties:
     override: false
     data: null # specify a list of key and values to override default nexus.properties

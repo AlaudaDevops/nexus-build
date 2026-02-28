@@ -1,3 +1,8 @@
+global:
+  permission:
+    initContainer:
+      enabled: true
+
 hostPath: /tmp/nexus-<template.{{randAlphaNum 10}}>
 
 statefulset:

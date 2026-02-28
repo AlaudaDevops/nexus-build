@@ -53,12 +53,34 @@ spec:
       {{- if .Values.serviceAccount.enabled }}
       serviceAccountName: {{ include "nexus.serviceAccountName" . }}
       {{- end }}
+      {{- include "podSecurityContext" . | nindent 6 }}
       terminationGracePeriodSeconds: {{ .Values.statefulset.container.terminationGracePeriod }}
       initContainers:
-        # chown nexus-data to 'nexus' user and init log directories/files for a new pod
+        {{- if .Values.global.permission.initContainer.enabled }}
+        - name: volume-permissions
+          image: {{ include "nexus.image" (dict "values" .Values "image" "busybox") }}
+          command: [ /bin/sh ]
+          args:
+            - -c
+            - >-
+              chown -R '{{ include "nexus.runAsUser" . }}:{{ include "nexus.runAsGroup" . }}' /nexus-data
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: nexus-data
+              mountPath: /nexus-data
+          resources:
+            limits:
+              cpu: "0.2"
+              memory: "512Mi"
+            requests:
+              cpu: "0.1"
+              memory: "256Mi"
+        {{- end }}
+        # init log directories/files for a new pod
         # otherwise the side car containers will crash a couple of times and backoff whilst waiting
         # for nxrm-app to start and this increases the total start up time.
-        - name: chown-nexusdata-owner-to-nexus-and-init-log-dir
+        - name: init-log-dir
           image: {{ include "nexus.image" (dict "values" .Values "image" "busybox") }}
           command: [ /bin/sh ]
           args:
@@ -70,10 +92,11 @@ spec:
               touch -a /nexus-data/log/tasks/allTasks.log &&
               touch -a /nexus-data/log/audit/audit.log &&
               touch -a /nexus-data/log/request.log &&
-              cp /tmp/initial-password /nexus-data/admin.password &&
-              chown -R '{{ include "nexus.runAsUser" . }}:{{ include "nexus.runAsGroup" . }}' /nexus-data
+              cp /tmp/initial-password /nexus-data/admin.password
+          {{ if .Values.nexus.securityContext -}}
           securityContext:
-            runAsUser: 0
+            {{- toYaml .Values.nexus.securityContext | nindent 12 }}
+          {{ end -}}
           volumeMounts:
             - name: nexus-data
               mountPath: /nexus-data

@@ -6,6 +6,14 @@ Expand the name of the chart.
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+
+{{- define "podSecurityContext" -}}
+securityContext:
+  runAsUser: {{ .Values.nexus.podSecurityContext.runAsUser }}
+  runAsGroup:  {{ .Values.nexus.podSecurityContext.runAsGroup }}
+  fsGroup: {{ .Values.nexus.podSecurityContext.fsGroup }}
+{{- end -}}
+
 {{/*
 Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).

@@ -1,0 +1,51 @@
+apiVersion: operator.alaudadevops.io/v1alpha1
+kind: Nexus
+metadata:
+  name: nexus-basic
+spec:
+  externalURL: http://<node.ip.random.readable>:<nodeport.http>
+  version: 3.76.0
+  helmValues:
+    global:
+      labelBaseDomain: "cpaas.io"
+      registry:
+        address: <config.{{.registry.cluster | default "152-231-registry.alauda.cn:60070"}}>
+    secret:
+      nexusAdminSecret:
+        enabled: true
+        existingSecret: nexus-password
+        secretKey: password
+      nexusSecret:
+        enabled: true
+        secretKeyfile: |
+          {
+            "active": "default",
+            "keys": [
+              {
+                "id": "default",
+                "key": "default-key"
+              }
+            ]
+          }
+    statefulset:
+      container:
+        resources:
+          requests:
+            cpu: 1
+            memory: 2Gi
+          limits:
+            cpu: 4
+            memory: 8Gi
+        env:
+          zeroDowntimeEnabled: true
+          install4jAddVmParams: <template.{{ ternary "-Djava.net.preferIPv6Addresses=true -Xms2703m -Xmx2703m" "-Xms2703m -Xmx2703m" (eq .acp.protocolStack "IPv6") }}>
+    storageClass:
+      name: <storage-class>
+    pvc:
+      volumeClaimTemplate:
+        enabled: true
+      storage: 10Gi
+    service:
+      nexus:
+        enabled: true
+        nodePort: <nodeport.http>

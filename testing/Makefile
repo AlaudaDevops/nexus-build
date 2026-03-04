@@ -25,7 +25,7 @@ test-all: create-testing-ns
 	$(TEST_COMMAND) $(GODOG_ARGS) --godog.tags="~@e2e"
 
 test-e2e: create-testing-ns
-	$(TEST_COMMAND) $(GODOG_ARGS) --godog.tags="@e2e"
+	INSECURE_SKIP_TLS_VERIFY=true $(TEST_COMMAND) $(GODOG_ARGS) --godog.tags="@e2e"
 
 report:
 	allure generate --clean

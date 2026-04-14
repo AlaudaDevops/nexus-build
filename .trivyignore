@@ -1,0 +1,62 @@
+# Trivy Ignore List for Nexus Build
+#
+# To update this file, run: ./hack/sync-trivyignore.sh
+# or: /fix-vulnerabilities (Step 0)
+
+# ============================================================
+# pkg:maven/commons-lang/commons-l
+# ============================================================
+
+# ============================================================
+# pkg:maven/org.eclipse.jetty/jetty-http@9.4.58.v20250814
+# ============================================================
+
+# [High] Elasticsearch in Nexus is not externally exposed; endpoint/listener vulnerabilities are not applicable
+CVE-2019-7611
+
+# [High] Unauthenticated attacker can trigger OOM via malformed HTTP request; Nexus ES is not externally exposed, not affected
+CVE-2023-31418
+
+# [Medium] X-Pack ML stored XSS; Nexus does not enable ML, not affected
+CVE-2018-3824
+
+# [Medium] ES is not externally exposed; endpoint/listener and document/field-level permission attack surfaces do not exist
+CVE-2019-7614
+
+# [Medium] ES is not externally exposed; endpoint/network listener and document/field-level permission vulnerabilities are not applicable
+CVE-2020-7019
+
+# [Low] ES is not externally exposed; endpoint/listener and document/field-level permission vulnerabilities are not applicable
+CVE-2020-7020
+
+# [Medium] Requires audit logging enabled with emit_request_body configured; Nexus does not enable this, not affected
+CVE-2020-7021
+
+# [Medium] Requires suggester/profile API with DLS/FLS enabled; Nexus does not enable these, not affected
+CVE-2021-22135
+
+# [Medium] Involves DLS/FLS permission retention in cross-cluster search; Nexus does not provide cross-cluster search, not affected
+CVE-2021-22137
+
+# [Medium] Uncontrolled Grok parser recursion depth can cause DoS; Nexus does not integrate this component, not affected
+CVE-2021-22144
+
+# [Medium] Requires Watcher (X-Pack) enabled with search input logger set to DEBUG; image does not include/enable Watcher, not affected
+CVE-2023-49921
+
+# [Medium] Vulnerability affects improper private key encryption when elasticsearch-certutil generates CSR; Nexus ES is not externally accessible, not affected
+CVE-2024-23444
+
+# [Medium] Crafted ES SQL function execution can cause OOM; Nexus ES is not externally exposed, SQL plugin cannot be called externally, not affected
+CVE-2024-43709
+
+# [Medium] Resource exhaustion when using Mustache search templates; Nexus does not use this component, not affected
+CVE-2024-52979
+
+# ============================================================
+# Jetty 9.4.58 (jetty-http)
+# ============================================================
+
+# [Medium] [False positive] The installed version's corresponding commit already includes the fix
+CVE-2024-6763
+

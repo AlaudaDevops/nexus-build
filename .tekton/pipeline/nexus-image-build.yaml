@@ -145,7 +145,7 @@ spec:
             yarn -v
             yarn install
 
-            ./mvnw -pl plugins/nexus-coreui-plugin,components/nexus-ui-plugin,components/nexus-rapture -am clean install -Dpublic -DskipTests -s ./settings.xml
+            ./mvnw -pl plugins/nexus-coreui-plugin,components/nexus-ui-plugin,components/nexus-rapture,components/nexus-swagger-filter -am clean install -Dpublic -DskipTests -s ./settings.xml
 
             # nexus-public only contains nexus code and cannot be used directly.
             # To upgrade the problematic js plugins, we still built the complete jar package. Only copy the jar packages that contain dependencies on the vulnerable js packages to the image directory.
@@ -154,6 +154,9 @@ spec:
             cp $(workspaces.source.path)/source/components/nexus-ui-plugin/target/nexus-ui-plugin-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-ui-plugin-3.76.0-03.jar
             cp $(workspaces.source.path)/source/components/nexus-rapture/target/nexus-rapture-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-rapture-3.76.0-03.jar
             cp $(workspaces.source.path)/source/plugins/nexus-coreui-plugin/target/nexus-coreui-plugin-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-coreui-plugin-3.76.0-03.jar
+
+            # SwaggerAccessFilter: block unauthenticated access to Swagger API docs (DEVOPS-43719)
+            cp $(workspaces.source.path)/source/components/nexus-swagger-filter/target/nexus-swagger-filter-3.76.0-03.jar $(workspaces.source.path)/image/jar/swagger-access-filter.jar
       workspaces:
         - name: source
           workspace: source

@@ -2,21 +2,25 @@
 # Simple script to update image tag in values.yaml file using shell + regex
 # Usage: ./update-image-tag.sh <full-image-url> [values-file]
 # Examples: 
-#   ./update-image-tag.sh build-harbor.alauda.cn/devops/gitlab-org/build/cng/kubectl:1.32.4-68777
-#   ./update-image-tag.sh build-harbor.alauda.cn/devops/gitlab-org/build/cng/gitlab-rust:1.73.0-884436e@sha256:42a4dd272191e258c23c810dc6998651d7e2ae153d944b830fa35b70ddee131b
+#   ./update-image-tag.sh devops/gitlab-org/build/cng/kubectl:1.32.4-68777
+#   ./update-image-tag.sh devops/gitlab-org/build/cng/gitlab-rust:1.73.0-884436e@sha256:42a4dd272191e258c23c810dc6998651d7e2ae153d944b830fa35b70ddee131b
 
 set -euo pipefail
 
 # Default registry to remove
-DEFAULT_REGISTRY="build-harbor.alauda.cn"
+DEFAULT_REGISTRY=""
+if [ -f "$REPO_ROOT/.env" ]; then
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+fi
 
 # Function to display usage
 usage() {
     echo "Usage: $0 <full-image-url> [values-file]"
     echo "Examples:"
-    echo "  $0 build-harbor.alauda.cn/devops/gitlab-org/build/cng/kubectl:1.32.4-68777"
-    echo "  $0 build-harbor.alauda.cn/devops/gitlab-org/build/cng/gitlab-rust:1.73.0-884436e@sha256:42a4dd272191e258c23c810dc6998651d7e2ae153d944b830fa35b70ddee131b"
-    echo "  $0 build-harbor.alauda.cn/devops/gitlab-org/build/cng/kubectl:1.32.4-68777 modules/gitlab-chart/values.yaml"
+    echo "  $0 devops/gitlab-org/build/cng/kubectl:1.32.4-68777"
+    echo "  $0 devops/gitlab-org/build/cng/gitlab-rust:1.73.0-884436e@sha256:42a4dd272191e258c23c810dc6998651d7e2ae153d944b830fa35b70ddee131b"
+    echo "  $0 devops/gitlab-org/build/cng/kubectl:1.32.4-68777 modules/gitlab-chart/values.yaml"
     exit 1
 }
 

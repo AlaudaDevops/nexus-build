@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -e
+
 # Check parameters
 if [ "$#" -lt 4 ] || [ "$#" -gt 5 ]; then
     echo "Usage: $0 <NEXUS_HOME> <JAR_PATH> <OLD_VERSION> <NEW_VERSION> [JAR_URL]"
@@ -46,8 +48,6 @@ else
     curl -L -o $NEXUS_HOME/system/$JAR_PATH/$NEW_VERSION/$JAR_NAME-$NEW_VERSION.jar \
       https://repo1.maven.org/maven2/$JAR_PATH/$NEW_VERSION/$JAR_NAME-$NEW_VERSION.jar
 fi
-
-
 # 2. Update version references in configuration files
 echo "Updating configuration files $JAR_NAME/$OLD_VERSION|$JAR_NAME/$NEW_VERSION ..."
 # Replace format 1: "commons-compress/1.24.0"

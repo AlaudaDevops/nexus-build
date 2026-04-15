@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 
 NEXUS_HOME=$1
 OLD_VERSION=$2

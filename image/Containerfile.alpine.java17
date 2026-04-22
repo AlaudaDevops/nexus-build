@@ -56,7 +56,7 @@ RUN apk add openjdk17 tar procps gzip curl shadow \
 
 RUN apk del --no-cache openssl || true
 RUN apk update && apk add --no-cache openssl \
-    && apk upgrade --no-cache musl musl-utils
+    && apk upgrade --no-cache musl musl-utils zlib
 
 WORKDIR ${SONATYPE_DIR}
 
@@ -105,9 +105,21 @@ ARG COMMONS_BEANUTILS_NEW_VERSION=1.11.0
 # renovate: datasource=maven depName=commons-fileupload lookupName=commons-fileupload:commons-fileupload
 ARG COMMONS_FILEUPLOAD_NEW_VERSION=1.6.0
 
+# Jakarta Mail library new version
+# renovate: datasource=maven depName=jakarta.mail lookupName=com.sun.mail:jakarta.mail
+ARG JAKARTA_MAIL_NEW_VERSION=1.6.8
+
 # BouncyCastle PKIX JDK15to18 library new version
 # renovate: datasource=maven depName=bcpkix-jdk15to18 lookupName=org.bouncycastle:bcpkix-jdk15to18
-ARG BCPKIX_JDK15TO18_NEW_VERSION=1.79
+ARG BCPKIX_JDK15TO18_NEW_VERSION=1.84
+
+# BouncyCastle PGP JDK15to18 library new version
+# renovate: datasource=maven depName=bcpg-jdk15to18 lookupName=org.bouncycastle:bcpg-jdk15to18
+ARG BCPG_JDK15TO18_NEW_VERSION=1.84
+
+# BouncyCastle provider JDK15to18 library new version
+# renovate: datasource=maven depName=bcprov-jdk15to18 lookupName=org.bouncycastle:bcprov-jdk15to18
+ARG BCPROV_JDK15TO18_NEW_VERSION=1.84
 
 # gRPC Netty Shaded library new version
 # renovate: datasource=maven depName=grpc-netty-shaded lookupName=io.grpc:grpc-netty-shaded
@@ -116,6 +128,9 @@ ARG GRPC_NETTY_SHADED_NEW_VERSION=1.75.0
 # Jetty web server new version
 # renovate: datasource=maven depName=jetty lookupName=org.eclipse.jetty:jetty
 ARG JETTY_NEW_VERSION=9.4.58.v20250814
+
+# Backported Jetty HTTP parser fix for CVE-2026-2332 (from jetty issue #14495/#14496)
+ARG JETTY_HTTP_PATCHED_VERSION=9.4.60.v20260421
 
 # Jackson Core library new version
 # renovate: datasource=maven depName=jackson-core lookupName=com.fasterxml.jackson.core:jackson-core
@@ -140,9 +155,15 @@ RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/cyclonedx/cyclonedx-core-java
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/commons/commons-lang3 3.13.0 ${COMMONS_LANG3_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME commons-beanutils/commons-beanutils 1.9.4 ${COMMONS_BEANUTILS_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME commons-fileupload/commons-fileupload 1.5 ${COMMONS_FILEUPLOAD_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME com/sun/mail/jakarta.mail 1.6.5 ${JAKARTA_MAIL_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/bouncycastle/bcpkix-jdk15to18 1.78.1 ${BCPKIX_JDK15TO18_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/bouncycastle/bcpg-jdk15to18 1.78.1 ${BCPG_JDK15TO18_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/bouncycastle/bcprov-jdk15to18 1.78.1 ${BCPROV_JDK15TO18_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/tika/tika-core 1.28.4 3.2.2 https://github.com/AlaudaDevops/tika/releases/download/v3.2.2/tika-core-3.2.2.jar \
-  && cp $NEXUS_HOME/system/org/bouncycastle/bcpkix-jdk15to18/${BCPKIX_JDK15TO18_NEW_VERSION}/bcpkix-jdk15to18-${BCPKIX_JDK15TO18_NEW_VERSION}.jar $NEXUS_HOME/lib/bcpkix-jdk15to18-${BCPKIX_JDK15TO18_NEW_VERSION}.jar && rm -rf $NEXUS_HOME/lib/bcpkix-jdk15to18-1.78.1.jar \
+  && cp $NEXUS_HOME/system/org/bouncycastle/bcpkix-jdk15to18/${BCPKIX_JDK15TO18_NEW_VERSION}/bcpkix-jdk15to18-${BCPKIX_JDK15TO18_NEW_VERSION}.jar $NEXUS_HOME/lib/bcpkix-jdk15to18-${BCPKIX_JDK15TO18_NEW_VERSION}.jar \
+  && cp $NEXUS_HOME/system/org/bouncycastle/bcpg-jdk15to18/${BCPG_JDK15TO18_NEW_VERSION}/bcpg-jdk15to18-${BCPG_JDK15TO18_NEW_VERSION}.jar $NEXUS_HOME/lib/bcpg-jdk15to18-${BCPG_JDK15TO18_NEW_VERSION}.jar \
+  && cp $NEXUS_HOME/system/org/bouncycastle/bcprov-jdk15to18/${BCPROV_JDK15TO18_NEW_VERSION}/bcprov-jdk15to18-${BCPROV_JDK15TO18_NEW_VERSION}.jar $NEXUS_HOME/lib/bcprov-jdk15to18-${BCPROV_JDK15TO18_NEW_VERSION}.jar \
+  && rm -rf $NEXUS_HOME/lib/bcpkix-jdk15to18-1.78.1.jar $NEXUS_HOME/lib/bcpg-jdk15to18-1.78.1.jar $NEXUS_HOME/lib/bcprov-jdk15to18-1.78.1.jar \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME io/grpc/grpc-netty-shaded 1.62.2 ${GRPC_NETTY_SHADED_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME com/fasterxml/jackson/core/jackson-core 2.17.0 ${JACKSON_CORE_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/codehaus/plexus/plexus-utils 3.5.1 ${PLEXUS_UTILS_NEW_VERSION} \
@@ -150,6 +171,7 @@ RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/cyclonedx/cyclonedx-core-java
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/shiro/shiro-core 1.13.0 ${SHIRO_CORE_NEW_VERSION} https://github.com/AlaudaDevops/shiro/releases/download/v${SHIRO_CORE_NEW_VERSION}/shiro-core-${SHIRO_CORE_NEW_VERSION}.jar
 # update jetty
 RUN $NEXUS_HOME/scripts/replace-jetty.sh $NEXUS_HOME 9.4.56.v20240826 ${JETTY_NEW_VERSION}
+RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/eclipse/jetty/jetty-http ${JETTY_NEW_VERSION} ${JETTY_HTTP_PATCHED_VERSION} https://github.com/AlaudaDevops/jetty.project/releases/download/v${JETTY_HTTP_PATCHED_VERSION}/jetty-http-${JETTY_HTTP_PATCHED_VERSION}.jar
 
 # Update the JAR files that fix vulnerabilities through compiling nexus-public
 RUN $NEXUS_HOME/scripts/replace-nexus-jar.sh

@@ -68,6 +68,10 @@ For each fixable JAR:
 1. Check if a newer official release fixes it — **always prefer upstream over forks**
 2. Review existing AlaudaDevops forks in the Containerfile; if upstream now has a fix, switch to official and archive the fork
 3. If no official fix: fork to AlaudaDevops, create `alauda-<version>` branch, fix pom.xml dependency, add GitHub Actions build workflow, push to trigger release
+   - For cherry-picked vulnerability patches, the fork commit message **must** record the upstream original PR (URL and PR number).
+   - Recommended commit footer:
+     - `Upstream-PR: https://github.com/<owner>/<repo>/pull/<id>`
+     - `Cherry-picked-from: <commit-sha>` (if applicable)
 4. Reference released JAR via custom URL arg in Containerfile
 5. **Keep major version unchanged** for OSGi compatibility
 

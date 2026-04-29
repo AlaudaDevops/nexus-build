@@ -21,3 +21,9 @@ spec:
   system: system:devops-tools
   lifecycle: production
   owner: devops
+  dependsOn:
+    - component:devops-tika
+    - component:devops-shiro
+    - component:devops-jetty-project
+    - component:devops-org-ops4j-pax-url
+    - component:devops-sonarqube-community-branch-plugin

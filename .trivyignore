@@ -60,3 +60,17 @@ CVE-2024-52979
 # [Medium] [False positive] The installed version's corresponding commit already includes the fix
 CVE-2024-6763
 
+# ============================================================
+# pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.18.8
+# ============================================================
+
+# [Medium] Ignored properties can be unexpectedly modified. Fix versions 2.18.9 / 2.21.5 not yet released to Maven Central as of 2026-07-02; only 3.1.4 (major bump, incompatible with Nexus) has the fix. Remove this entry after upgrading to jackson-databind >= 2.18.9.
+CVE-2026-54515
+
+# ============================================================
+# pkg:maven/org.apache.shiro/shiro-core@1.13.1-alauda
+# ============================================================
+
+# [Low] Timing-attack brute force. Already backported in the AlaudaDevops/shiro 1.13.1-alauda fork (see Containerfile SHIRO_CORE_NEW_VERSION); Trivy still matches by version string < 2.1.0.
+CVE-2026-23901
+

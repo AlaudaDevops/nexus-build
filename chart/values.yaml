@@ -7,7 +7,7 @@ global:
   images:
     nexus:
       repository: devops/sonatype-nexus3
-      tag: v3.76.0-gbe29706
+      tag: v3.76.0-ga495c68
       support_arm: true
       thirdparty: true
     busybox:

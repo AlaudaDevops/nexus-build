@@ -132,17 +132,38 @@ ARG JETTY_NEW_VERSION=9.4.58.v20250814
 # Backported Jetty HTTP parser fix for CVE-2026-2332 (from jetty issue #14495/#14496)
 ARG JETTY_HTTP_PATCHED_VERSION=9.4.60.v20260421
 
-# Jackson Core library new version
+# Jackson family versions (kept aligned to satisfy OSGi wiring: jackson-databind
+# imports jackson-annotations/core with [2.18, 3.0) range).
 # renovate: datasource=maven depName=jackson-core lookupName=com.fasterxml.jackson.core:jackson-core
-ARG JACKSON_CORE_NEW_VERSION=2.18.6
+ARG JACKSON_CORE_NEW_VERSION=2.18.8
+
+# Jackson Databind library new version (CVE-2026-54512/54513 HIGH, CVE-2026-54514/54515 MEDIUM)
+# renovate: datasource=maven depName=jackson-databind lookupName=com.fasterxml.jackson.core:jackson-databind
+ARG JACKSON_DATABIND_NEW_VERSION=2.18.8
+
+# Jackson Annotations must be >= 2.18.0 (jackson-databind 2.18.x OSGi Import-Package requirement)
+# renovate: datasource=maven depName=jackson-annotations lookupName=com.fasterxml.jackson.core:jackson-annotations
+ARG JACKSON_ANNOTATIONS_NEW_VERSION=2.18.8
+
+# PostgreSQL JDBC driver new version (CVE-2026-42198)
+# renovate: datasource=maven depName=postgresql lookupName=org.postgresql:postgresql
+ARG POSTGRESQL_NEW_VERSION=42.7.11
 
 # Plexus Utils library new version
 # renovate: datasource=maven depName=plexus-utils lookupName=org.codehaus.plexus:plexus-utils
 ARG PLEXUS_UTILS_NEW_VERSION=3.6.1
 
-# Apache Shiro Core: patched fork with CVE-2026-23901 backport (timing-safe auth)
-# 2.x breaks OSGi (shiro-web requires 1.x range), so we maintain a 1.13.x fork.
-ARG SHIRO_CORE_NEW_VERSION=1.13.1-alauda
+# Apache Shiro Core / Web: AlaudaDevops fork backporting the following CVEs to 1.13.x:
+#   CVE-2026-23901 (timing-safe auth), CVE-2026-49268 (LDAP DN injection),
+#   CVE-2026-43827 (session fixation), CVE-2026-43828 (secure cookie default).
+# Kept on 1.x because Nexus's Karaf requires OSGi range [1.13, 2.0).
+ARG SHIRO_CORE_NEW_VERSION=1.13.2-alauda
+ARG SHIRO_WEB_NEW_VERSION=1.13.2-alauda
+
+# JLine bundle: AlaudaDevops fork of 3.21.0 with CVE-2026-56740 / CVE-2026-56741 Telnet
+# DoS backports. Karaf shell.core imports jline packages with OSGi range [3.21, 4),
+# so upstream's 4.2.1 fix isn't usable — we ship the patch as a 3.21.0 point release.
+ARG JLINE_NEW_VERSION=3.21.0-alauda
 
 # Keycloak SAML adapter core library new version
 # renovate: datasource=maven depName=keycloak-saml-adapter-core lookupName=org.keycloak:keycloak-saml-adapter-core
@@ -166,9 +187,14 @@ RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/cyclonedx/cyclonedx-core-java
   && rm -rf $NEXUS_HOME/lib/bcpkix-jdk15to18-1.78.1.jar $NEXUS_HOME/lib/bcpg-jdk15to18-1.78.1.jar $NEXUS_HOME/lib/bcprov-jdk15to18-1.78.1.jar \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME io/grpc/grpc-netty-shaded 1.62.2 ${GRPC_NETTY_SHADED_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME com/fasterxml/jackson/core/jackson-core 2.17.0 ${JACKSON_CORE_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME com/fasterxml/jackson/core/jackson-databind 2.17.0 ${JACKSON_DATABIND_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME com/fasterxml/jackson/core/jackson-annotations 2.17.0 ${JACKSON_ANNOTATIONS_NEW_VERSION} \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/postgresql/postgresql 42.7.2 ${POSTGRESQL_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/codehaus/plexus/plexus-utils 3.5.1 ${PLEXUS_UTILS_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/keycloak/keycloak-saml-adapter-core 18.0.2 ${KEYCLOAK_SAML_ADAPTER_CORE_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/shiro/shiro-core 1.13.0 ${SHIRO_CORE_NEW_VERSION} https://github.com/AlaudaDevops/shiro/releases/download/v${SHIRO_CORE_NEW_VERSION}/shiro-core-${SHIRO_CORE_NEW_VERSION}.jar
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/shiro/shiro-core 1.13.0 ${SHIRO_CORE_NEW_VERSION} https://github.com/AlaudaDevops/shiro/releases/download/v${SHIRO_CORE_NEW_VERSION}/shiro-core-${SHIRO_CORE_NEW_VERSION}.jar \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/shiro/shiro-web 1.13.0 ${SHIRO_WEB_NEW_VERSION} https://github.com/AlaudaDevops/shiro/releases/download/v${SHIRO_WEB_NEW_VERSION}/shiro-web-${SHIRO_WEB_NEW_VERSION}.jar \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/jline/jline 3.21.0 ${JLINE_NEW_VERSION} https://github.com/AlaudaDevops/jline3/releases/download/jline-${JLINE_NEW_VERSION}/jline-${JLINE_NEW_VERSION}.jar
 # update jetty
 RUN $NEXUS_HOME/scripts/replace-jetty.sh $NEXUS_HOME 9.4.56.v20240826 ${JETTY_NEW_VERSION}
 RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/eclipse/jetty/jetty-http ${JETTY_NEW_VERSION} ${JETTY_HTTP_PATCHED_VERSION} https://github.com/AlaudaDevops/jetty.project/releases/download/v${JETTY_HTTP_PATCHED_VERSION}/jetty-http-${JETTY_HTTP_PATCHED_VERSION}.jar

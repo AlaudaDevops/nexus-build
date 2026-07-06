@@ -7,6 +7,9 @@
 
 set -euo pipefail
 
+# Resolve repo root (script lives in <repo>/hack); allow override via env
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
 # Default registry to remove
 DEFAULT_REGISTRY=""
 if [ -f "$REPO_ROOT/.env" ]; then

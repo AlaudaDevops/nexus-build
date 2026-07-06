@@ -153,15 +153,17 @@ ARG POSTGRESQL_NEW_VERSION=42.7.11
 # renovate: datasource=maven depName=plexus-utils lookupName=org.codehaus.plexus:plexus-utils
 ARG PLEXUS_UTILS_NEW_VERSION=3.6.1
 
-# Apache Shiro Core: patched fork with CVE-2026-23901 backport (timing-safe auth)
-# 2.x breaks OSGi (shiro-web requires 1.x range), so we maintain a 1.13.x fork.
-# TODO(sec): bump to 1.13.2-alauda after AlaudaDevops/shiro#3 merges to also cover
-#   CVE-2026-49268 (LDAP DN injection), CVE-2026-43827 (session fixation),
-#   CVE-2026-43828 (secure cookie — also add shiro-web replace step).
-ARG SHIRO_CORE_NEW_VERSION=1.13.1-alauda
+# Apache Shiro Core / Web: AlaudaDevops fork backporting the following CVEs to 1.13.x:
+#   CVE-2026-23901 (timing-safe auth), CVE-2026-49268 (LDAP DN injection),
+#   CVE-2026-43827 (session fixation), CVE-2026-43828 (secure cookie default).
+# Kept on 1.x because Nexus's Karaf requires OSGi range [1.13, 2.0).
+ARG SHIRO_CORE_NEW_VERSION=1.13.2-alauda
+ARG SHIRO_WEB_NEW_VERSION=1.13.2-alauda
 
-# JLine: TODO(sec) after AlaudaDevops/jline3#2 merges, add ARG JLINE_NEW_VERSION=3.21.0-alauda
-# and an org/jline/jline replace.sh step to cover CVE-2026-56740/56741 (Telnet DoS).
+# JLine bundle: AlaudaDevops fork of 3.21.0 with CVE-2026-56740 / CVE-2026-56741 Telnet
+# DoS backports. Karaf shell.core imports jline packages with OSGi range [3.21, 4),
+# so upstream's 4.2.1 fix isn't usable — we ship the patch as a 3.21.0 point release.
+ARG JLINE_NEW_VERSION=3.21.0-alauda
 
 # Keycloak SAML adapter core library new version
 # renovate: datasource=maven depName=keycloak-saml-adapter-core lookupName=org.keycloak:keycloak-saml-adapter-core
@@ -190,7 +192,9 @@ RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/cyclonedx/cyclonedx-core-java
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/postgresql/postgresql 42.7.2 ${POSTGRESQL_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/codehaus/plexus/plexus-utils 3.5.1 ${PLEXUS_UTILS_NEW_VERSION} \
   && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/keycloak/keycloak-saml-adapter-core 18.0.2 ${KEYCLOAK_SAML_ADAPTER_CORE_NEW_VERSION} \
-  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/shiro/shiro-core 1.13.0 ${SHIRO_CORE_NEW_VERSION} https://github.com/AlaudaDevops/shiro/releases/download/v${SHIRO_CORE_NEW_VERSION}/shiro-core-${SHIRO_CORE_NEW_VERSION}.jar
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/shiro/shiro-core 1.13.0 ${SHIRO_CORE_NEW_VERSION} https://github.com/AlaudaDevops/shiro/releases/download/v${SHIRO_CORE_NEW_VERSION}/shiro-core-${SHIRO_CORE_NEW_VERSION}.jar \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/apache/shiro/shiro-web 1.13.0 ${SHIRO_WEB_NEW_VERSION} https://github.com/AlaudaDevops/shiro/releases/download/v${SHIRO_WEB_NEW_VERSION}/shiro-web-${SHIRO_WEB_NEW_VERSION}.jar \
+  && $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/jline/jline 3.21.0 ${JLINE_NEW_VERSION} https://github.com/AlaudaDevops/jline3/releases/download/jline-${JLINE_NEW_VERSION}/jline-${JLINE_NEW_VERSION}.jar
 # update jetty
 RUN $NEXUS_HOME/scripts/replace-jetty.sh $NEXUS_HOME 9.4.56.v20240826 ${JETTY_NEW_VERSION}
 RUN $NEXUS_HOME/scripts/replace.sh $NEXUS_HOME org/eclipse/jetty/jetty-http ${JETTY_NEW_VERSION} ${JETTY_HTTP_PATCHED_VERSION} https://github.com/AlaudaDevops/jetty.project/releases/download/v${JETTY_HTTP_PATCHED_VERSION}/jetty-http-${JETTY_HTTP_PATCHED_VERSION}.jar

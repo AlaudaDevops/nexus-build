@@ -68,9 +68,45 @@ CVE-2024-6763
 CVE-2026-54515
 
 # ============================================================
-# pkg:maven/org.apache.shiro/shiro-core@1.13.1-alauda
+# pkg:maven/org.apache.shiro/shiro-core@1.13.2-alauda
 # ============================================================
 
-# [Low] Timing-attack brute force. Already backported in the AlaudaDevops/shiro 1.13.1-alauda fork (see Containerfile SHIRO_CORE_NEW_VERSION); Trivy still matches by version string < 2.1.0.
+# [Low] Timing-attack brute force. Already backported in the AlaudaDevops/shiro 1.13.x-alauda fork (see Containerfile SHIRO_CORE_NEW_VERSION); Trivy still matches by version string < 2.1.0.
 CVE-2026-23901
+
+# [High] LDAP DN injection. Backported in AlaudaDevops/shiro 1.13.2-alauda fork
+# (Rdn.escapeValue on principal in DefaultLdapRealm + ActiveDirectoryRealm).
+# Upstream fix is only in 2.2.1+, which is unusable here due to OSGi range [1.13, 2.0).
+CVE-2026-49268
+
+# [Medium] Session fixation. Backported in AlaudaDevops/shiro 1.13.2-alauda fork
+# (DefaultSecurityManager destroys existing session on successful login).
+# Upstream fix only in 2.2.0+.
+CVE-2026-43827
+
+# ============================================================
+# pkg:maven/org.apache.shiro/shiro-web@1.13.2-alauda
+# ============================================================
+
+# [Medium] Insecure session/rememberMe cookies over HTTPS. Backported in
+# AlaudaDevops/shiro 1.13.2-alauda fork (default Secure flag on DefaultWebSessionManager
+# and CookieRememberMeManager; SimpleCookie only emits Secure when request.isSecure()).
+# Upstream fix only in 2.2.0+.
+CVE-2026-43828
+
+# ============================================================
+# pkg:maven/org.jline/jline-remote-telnet@3.21.0-alauda
+# ============================================================
+
+# [High] Telnet NAWS DoS. Backported in AlaudaDevops/jline3 3.21.0-alauda fork
+# (LARGEST_BELIEVABLE_WIDTH/HEIGHT=500 upper bound in setTerminalGeometry).
+# Upstream fix only in 4.2.1+, unusable here due to Karaf OSGi range [3.21, 4).
+# Nexus doesn't enable Karaf telnet — additional defense in depth.
+CVE-2026-56741
+GHSA-2r2c-cx56-8933
+
+# [High] Telnet NEW-ENVIRON heap DoS. Backported in AlaudaDevops/jline3 3.21.0-alauda
+# fork (NE_VAR_COUNT_MAX=100 guard in readNEVariables). Upstream fix only in 4.2.1+.
+CVE-2026-56740
+GHSA-47qp-hqvx-6r3f
 

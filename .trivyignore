@@ -61,13 +61,6 @@ CVE-2024-52979
 CVE-2024-6763
 
 # ============================================================
-# pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.18.8
-# ============================================================
-
-# [Medium] Ignored properties can be unexpectedly modified. Fix versions 2.18.9 / 2.21.5 not yet released to Maven Central as of 2026-07-02; only 3.1.4 (major bump, incompatible with Nexus) has the fix. Remove this entry after upgrading to jackson-databind >= 2.18.9.
-CVE-2026-54515
-
-# ============================================================
 # pkg:maven/org.apache.shiro/shiro-core@1.13.2-alauda
 # ============================================================
 

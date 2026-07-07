@@ -6,6 +6,14 @@ description: Build nexus image, scan vulnerabilities with Trivy, and fix them
 
 Execute step by step. Report progress at each stage and wait for confirmation before risky changes.
 
+## Remediation Policy (Required)
+
+Fix **every vulnerability that has a fix version**, regardless of severity (incl. LOW/MEDIUM). A fix version existing means it must be fixed — it is not optional:
+
+- Compatible patched version available (same OSGi range) → upgrade to it.
+- **Only fix version is OSGi-incompatible** (a higher major/minor that breaks Karaf bundle resolution) → still fix it: fork the library to AlaudaDevops, create an `alauda-<base-version>` branch off the compatible base version, and cherry-pick the upstream fix commit onto it (see 3c). Do NOT mark it "unfixable" just because the released fix version is incompatible.
+- Genuinely unfixable (no fix published anywhere) → exempt in `.trivyignore` (3d) with reason.
+
 ## Step 0: Sync .trivyignore
 
 ```bash
@@ -32,7 +40,7 @@ Categorize results into:
 - **OS package** (alpine apk) — fixable via `apk upgrade`
 - **Standalone JAR** — replaceable via `replace.sh`
 - **Fat JAR embedded** (shaded JARs like pax-url-aether) — requires fork or upstream fix
-- **Unfixable** — no fix version, or fix requires incompatible major version
+- **Unfixable** — no fix version published anywhere (an incompatible-version fix is NOT unfixable → fork + cherry-pick, see 3c and the Remediation Policy)
 
 ## Step 3: Fix Vulnerabilities
 
@@ -75,9 +83,9 @@ For each fixable JAR:
 4. Reference released JAR via custom URL arg in Containerfile
 5. **Keep major version unchanged** for OSGi compatibility
 
-### 3d. Unfixable
+### 3d. Unfixable (only when NO fix is published anywhere)
 
-Add CVE to `.trivyignore` with severity and reason. Submit exemption to Thanos.
+Only reach here if there is genuinely no fix version — not merely an OSGi-incompatible one (those go to 3c via fork + cherry-pick, per the Remediation Policy). Add CVE to `.trivyignore` with severity and reason. Submit exemption to Thanos.
 
 ## Step 4: Smoke Test
 

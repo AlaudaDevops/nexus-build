@@ -133,17 +133,20 @@ ARG JETTY_NEW_VERSION=9.4.58.v20250814
 ARG JETTY_HTTP_PATCHED_VERSION=9.4.60.v20260421
 
 # Jackson family versions (kept aligned to satisfy OSGi wiring: jackson-databind
-# imports jackson-annotations/core with [2.18, 3.0) range).
+# 2.21.x imports jackson-annotations/core with [2.21, 3) range).
 # renovate: datasource=maven depName=jackson-core lookupName=com.fasterxml.jackson.core:jackson-core
-ARG JACKSON_CORE_NEW_VERSION=2.18.8
+ARG JACKSON_CORE_NEW_VERSION=2.21.5
 
-# Jackson Databind library new version (CVE-2026-54512/54513 HIGH, CVE-2026-54514/54515 MEDIUM)
+# Jackson Databind library new version (CVE-2026-54512/54513 HIGH, CVE-2026-54514/54515 MEDIUM).
+# Bumped to 2.21.5 to also fix CVE-2026-54515 (case-insensitive deser bypasses per-property
+# @JsonIgnoreProperties); the 2.18.9 same-line patch is not yet on Maven Central.
 # renovate: datasource=maven depName=jackson-databind lookupName=com.fasterxml.jackson.core:jackson-databind
-ARG JACKSON_DATABIND_NEW_VERSION=2.18.8
+ARG JACKSON_DATABIND_NEW_VERSION=2.21.5
 
-# Jackson Annotations must be >= 2.18.0 (jackson-databind 2.18.x OSGi Import-Package requirement)
+# Jackson Annotations must satisfy jackson-databind 2.21.x OSGi Import-Package [2.21,3).
+# Note: annotations for this line is versioned "2.21" (no patch suffix).
 # renovate: datasource=maven depName=jackson-annotations lookupName=com.fasterxml.jackson.core:jackson-annotations
-ARG JACKSON_ANNOTATIONS_NEW_VERSION=2.18.8
+ARG JACKSON_ANNOTATIONS_NEW_VERSION=2.21
 
 # PostgreSQL JDBC driver new version (CVE-2026-42198)
 # renovate: datasource=maven depName=postgresql lookupName=org.postgresql:postgresql

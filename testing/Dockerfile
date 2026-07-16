@@ -63,7 +63,7 @@ RUN set -eux; \
     export ARCH_ALIAS="x86_64"; \
     fi; \
     mkdir -p /tools/bin/maven; \
-    curl -fsSLO https://dlcdn.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz; \
+    curl -fsSLO https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz; \
     tar xzvf apache-maven-${MAVEN_VERSION}-bin.tar.gz  --strip 1 -C ./bin/maven; \
     curl -sfL https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_${ARCH} -o ./bin/yq; \
     curl -sfL https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl -o ./bin/kubectl; \

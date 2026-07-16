@@ -1,4 +1,4 @@
-FROM docker-mirrors.alauda.cn/library/golang:1.25.3-bookworm AS builder
+FROM registry-dev.alauda.io/platform-edge/tekton-catalog-incubator/golang:v1.25 AS builder
 
 WORKDIR /tools
 RUN mkdir -p /tools/bin
@@ -11,10 +11,15 @@ RUN set -eux; \
 
 # ---- test-base, inlined from testing/Dockerfile.base (no external
 # registry.alauda.cn:60070/devops/nexus-ce-test-base image -- that host has no
-# registry-dev mirror and is unreachable from edge-build/ctyun-vm; see
+# registry-dev mirror and is unreachable from edge-build's buildkit builders; see
 # migrations/nexus/changes/nexus-ce-operator/state.yaml decision
-# integration-test-base-image-merged) ----
-FROM docker-mirrors.alauda.cn/library/python:3.12-slim
+# integration-test-base-image-merged). docker-mirrors.alauda.cn is ALSO
+# unreachable from the same buildkit builders (confirmed live,
+# nexus-operator-test-rtt6q: "dial tcp ...:443: i/o timeout" resolving
+# docker-mirrors.alauda.cn/library/python:3.12-slim) -- edge-build's buildkit
+# has no general internet egress, only registry-dev.alauda.io mirrors. Use the
+# registry-dev platform-edge mirror (same tag) instead. ----
+FROM registry-dev.alauda.io/platform-edge/python:3.12-slim
 
 WORKDIR /tools
 RUN mkdir -p /tools/bin

@@ -288,13 +288,32 @@ spec:
       # defaults (registry.alauda.cn:60070/... -- already the confirmed-reachable
       # host+port per gitops FIX4; build-harbor.alauda.cn/ops/aquasecurity/trivy-db
       # from the source pipeline was NOT ported, it was the unreachable host).
-      # Non-blocking (exitCode unset), matching source's default-off quality gate
-      # (image-scan-gate-enabled defaulted "false" upstream, never turned on).
+      # BLOCKING gate (no onError set): confirmed live on nexus-image-q77l7
+      # AFTER the stepSpecs resource fix let it schedule -- step-trivy-scan
+      # exited 1 (6 HIGH findings, trivy-summary result "status=findings"),
+      # failing the whole PipelineRun. The earlier "non-blocking / default-off
+      # quality gate" note in this comment described the SOURCE pipeline's
+      # setting, not this task's live behavior with severity:[HIGH,CRITICAL]
+      # set -- corrected here.
+      #
+      # DEVOPS-44489: PR-ONLY via the `when` below. A routine branch push
+      # (e.g. a chart/values.yaml tag bump from a prior run, or any main/
+      # release-*/alauda-* push) was turning into a hard failure on
+      # pre-existing image findings with no PR to fix them against. Trivy
+      # still gates PRs as a blocking check (an author can address findings
+      # before merge, same severity/ignoreUnfixed as before); branch pushes
+      # skip it and proceed straight to update-chart-values. PaC leaves
+      # `pull_request_number` empty on a branch push and set on a PR, so
+      # `notin [""]` runs the task only when it's a PR.
       - name: trivy-scanner
         timeout: 60m
         retries: 2
         runAfter:
           - build-nexus-image
+        when:
+          - input: "$(params.pull-request-number)"
+            operator: notin
+            values: [""]
         taskRef:
           resolver: hub
           params:

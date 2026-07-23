@@ -1,4 +1,16 @@
-FROM hub-mirrors.alauda.cn/library/eclipse-temurin:17.0.15_6-jdk-jammy
+# BASE_IMAGE declared before the first FROM (global scope) so it survives
+# across build stages -- proven pattern from toolbox/pr-cli + gitlab-ce-operator
+# + nexus-ce-operator's Containerfile (edge-build live smoke lesson).
+#
+# Rewritten from hub-mirrors.alauda.cn/library/eclipse-temurin:17.0.15_6-jdk-jammy
+# (DEVOPS-44489, P1/P2 containerfile-base-rewrite): no eclipse-temurin mirror
+# exists under registry-dev.alauda.io/base-images/ (checked: base-images/eclipse-temurin,
+# /openjdk, /jdk all 404). Swapped to the plain Ubuntu 22.04 (jammy) mirror that IS present
+# + install temurin-17-jdk via the SAME Adoptium apt repo this Containerfile already
+# configures for temurin-8-jdk below -- no new external dependency introduced, just
+# stops relying on the base image to provide the JDK.
+ARG BASE_IMAGE=registry-dev.alauda.io/base-images/ubuntu:22.04-alauda-202607220420
+FROM ${BASE_IMAGE}
 
 RUN export DEBIAN_FRONTEND=noninteractive && \
     echo 'Acquire::AllowReleaseInfoChange::Suite "true";' > /etc/apt/apt.conf.d/allow_release_info_change.conf && \
@@ -27,9 +39,15 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
       jq \
       expect \
       temurin-8-jdk \
+      temurin-17-jdk \
       xmlstarlet && \
     # Install yarn 1.x first (needed to bootstrap yarn 4.x)
     npm install -g yarn && \
     yarn set version 4.9.2 && \
     corepack enable && \
     corepack prepare yarn@4.9.2 --activate
+
+# eclipse-temurin's own base image set these; restore them explicitly now that
+# the JDK comes from an apt package instead of the base image (DEVOPS-44489).
+ENV JAVA_HOME=/usr/lib/jvm/temurin-17-jdk-amd64
+ENV PATH="${JAVA_HOME}/bin:${PATH}"

@@ -3,15 +3,25 @@ global:
     initContainer:
       enabled: true
   registry:
-    address: registry.alauda.cn:60080
+    # DEVOPS-44489: registry.alauda.cn:60080 -> registry-dev.alauda.io (P1/P2).
+    # Not a PaC-templated file (consumed by Helm + hack/update-image-tag.sh at
+    # commit time), so this is a literal host, not {{ registry_url }}.
+    address: registry-dev.alauda.io
   images:
     nexus:
-      repository: devops/sonatype-nexus3
-      tag: v3.76.0-ge428676
+      # devops/sonatype-nexus3 -> alauda-devops-toolchain/nexus/sonatype-nexus3:
+      # the path build-image.yaml's buildctl task now publishes to. This is the
+      # exact repository path nexus-ce-operator's e2e/packaging expect (see its
+      # integration-test-runtime-image-missing escalation, which names this
+      # path as the missing mirror this migration provides).
+      repository: alauda-devops-toolchain/nexus/sonatype-nexus3
+      tag: v3.76.0-g82552ad
       support_arm: true
       thirdparty: true
     busybox:
-      repository: ops/busybox
+      # ops/busybox -> base-images/busybox (confirmed live on registry-dev via
+      # skopeo; "ops/busybox" does not exist there).
+      repository: base-images/busybox
       tag: stable
       support_arm: true
       thirdparty: true

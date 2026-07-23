@@ -1,0 +1,29 @@
+# PaC Repository CR registering alauda-devops-toolchain/nexus-build with
+# Pipelines-as-Code. PaC watches code.alauda.io/alauda-devops-toolchain/nexus-build
+# and fires .tekton/build-base-image.yaml + .tekton/build-image.yaml +
+# .tekton/integration-test.yaml (deferred/inert, DEVOPS-44489) on push/MR/comment/
+# tag events (4-event webhook registered separately via GitLab API -- Push,
+# Merge-request, Note/comment, Tag-push).
+#
+# ZERO per-Repository params -- inherits all PaC globals (registry_url,
+# codescan_url, artifacts_url, code_url, gomod_proxy, registry_secret, ...) from
+# the PaC global config. Matches repository-toolbox.yaml / repository-helm-operator-sdk.yaml
+# precedent in this same gitops repo/cluster (adding per-repo params here would
+# drop ALL globals -- acp L-11 / pilot-lessons B reference).
+#
+# No namespace: -- ArgoCD pins this CR to alauda-devops-toolchain-build.
+apiVersion: pipelinesascode.tekton.dev/v1alpha1
+kind: Repository
+metadata:
+  name: nexus-build
+spec:
+  url: https://code.alauda.io/alauda-devops-toolchain/nexus-build
+  git_provider:
+    type: gitlab
+    url: https://code.alauda.io
+    secret:
+      name: gitlab-token
+      key: password
+    webhook_secret:
+      name: pac-webhook
+      key: secret

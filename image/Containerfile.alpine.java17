@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM build-harbor.alauda.cn/ops/alpine:3.21.5-alauda-202512020944 as builder
+# BASE_IMAGE declared before the first FROM (global scope, survives across
+# stages). Rewritten from build-harbor.alauda.cn/ops/alpine:3.21.5-alauda-202512020944
+# (DEVOPS-44489, P1/P2 containerfile-base-rewrite): registry-dev.alauda.io/base-images/alpine
+# does not carry the exact 3.21.5-alauda-202512020944 build; 3.21.7-alauda-202607221130 is
+# the latest maintained tag in the same 3.21.x line (confirmed live via skopeo).
+ARG BASE_IMAGE=registry-dev.alauda.io/base-images/alpine:3.21.7-alauda-202607221130
+FROM ${BASE_IMAGE} as builder
 
 LABEL name="Nexus Repository Manager" \
       maintainer="Sonatype <support@sonatype.com>" \
@@ -37,7 +43,9 @@ LABEL name="Nexus Repository Manager" \
       io.openshift.tags="Sonatype,Nexus,Repository Manager"
 
 ARG NEXUS_VERSION=3.76.0-03
-ARG NEXUS_DOWNLOAD_URL=https://build-nexus.alauda.cn/repository/alauda/files/nexus-${NEXUS_VERSION}-unix.tar.gz
+# public Sonatype mirror -- byte-identical to the old build-nexus.alauda.cn artifact
+# (SHA256 d336a1c1...), verified 2026-07-22; edge-build has internet egress.
+ARG NEXUS_DOWNLOAD_URL=https://download.sonatype.com/nexus/3/nexus-${NEXUS_VERSION}-unix.tar.gz
 ARG NEXUS_DOWNLOAD_SHA256_HASH=d336a1c1fa3c26ee977ef720707d7bbca660aee5bf7369a9037293910c63c672
 
 # configure nexus runtime
@@ -217,7 +225,7 @@ RUN apk del gzip shadow
 RUN set +e; \
   ls -d /usr/bin/* | grep -E "cpp|readelf|gcc|nc|netcat" | xargs rm
 
-FROM build-harbor.alauda.cn/ops/alpine:3.21.5-alauda-202512020944
+FROM ${BASE_IMAGE}
 
 COPY --from=builder / /
 

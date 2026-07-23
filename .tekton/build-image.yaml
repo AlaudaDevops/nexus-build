@@ -1,3 +1,14 @@
+# nexus-image: builds + pushes the Nexus Repository Manager SERVER image
+# (the deliverable the operator/e2e/packaging need on registry-dev).
+#
+# Option-D (DEVOPS-44489): the source pipeline pointed at a separate in-cluster
+# `Pipeline` CR (.tekton/pipeline/nexus-image-build.yaml, no resolver -- expected
+# to already exist as a cluster object) whose own tasks used the hub `alauda`
+# catalog (unserved) and buildx (not in the catalog at all -- only buildctl is).
+# Inlined as a native pipelineSpec here (no top-level pipelineRef, no separate
+# Pipeline CR) -- matches gitlab/toolbox/nexus-ce-operator precedent. The old
+# .tekton/pipeline/nexus-image-build.yaml Pipeline CR file is removed; its task
+# bodies are folded into this pipelineSpec's `tasks:` list unchanged in intent.
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
@@ -10,54 +21,446 @@ metadata:
       (
         "source/**".pathChanged() ||
         "image/**".pathChanged() ||
-        ".tekton/build-image.yaml".pathChanged() ||
-        ".tekton/pipeline/nexus-image-build".pathChanged()
+        ".tekton/build-image.yaml".pathChanged()
       )
     pipelinesascode.tekton.dev/max-keep-runs: "5"
+    pipelinesascode.tekton.dev/cancel-in-progress: "true"
 spec:
   timeouts:
     pipeline: "2h"
 
-  pipelineRef:
-    name: nexus-image-build
-
   params:
+    - name: git-url
+      value: "{{ repo_url }}"
     - name: git-revision
-      value:
-        url: "{{ repo_url }}"
-        branch: "{{ source_branch }}"
-        commit: "{{ revision }}"
-        pull-request-number: "{{ pull_request_number }}"
-        pull-request-source: "{{ source_branch }}"
-        pull-request-target: "{{ target_branch }}"
+      value: "{{ source_branch }}"
+    - name: pull-request-number
+      value: "{{ pull_request_number }}"
     - name: clean-cache
       value: "{{ clean-cache }}"
 
+  pipelineSpec:
+    description: >-
+      Inline pipeline for the Nexus server image: git-clone -> get-git-meta
+      (short sha for the image tag) -> build-nexus-app (yarn+maven compile,
+      runs in the nexus-ce-base image built by build-base-image.yaml) ->
+      buildctl (multi-arch Alpine server image) -> trivy-scanner ->
+      update-chart-values (auto-commit the new tag into chart/values.yaml,
+      consumed by nexus-ce-operator's charts/current submodule).
+
+    params:
+      - name: git-url
+        type: string
+      - name: git-revision
+        type: string
+      - name: pull-request-number
+        type: string
+        default: ""
+      - name: clean-cache
+        type: string
+        default: "false"
+
+    tasks:
+      - name: git-clone
+        timeout: 30m
+        retries: 3
+        taskRef:
+          resolver: hub
+          params:
+            - {name: catalog, value: catalog}
+            - {name: kind, value: task}
+            - {name: name, value: git-clone}
+            - {name: version, value: "0.10"}
+        params:
+          - name: url
+            value: $(params.git-url)
+          - name: revision
+            value: $(params.git-revision)
+          - name: pr-number
+            value: $(params.pull-request-number)
+        workspaces:
+          - name: output
+            workspace: source
+          - name: basic-auth
+            workspace: basic-auth
+
+      # image param rewritten: registry.alauda.cn:60080/devops/nonroot/chainguard/git:latest
+      # -> registry-dev.alauda.io/platform-edge/tekton-catalog-incubator/script-tools:latest
+      # (proven live fix, gitops FIX4 commit d85bb3d: port 60080 is unreachable from
+      # alauda-devops-toolchain-build; script-tools carries plain git/bash, which is
+      # all this step's script uses -- unlike update-chart-values below, no baked
+      # custom scripts are needed here).
+      - name: get-git-meta
+        timeout: 10m
+        retries: 0
+        runAfter:
+          - git-clone
+        params:
+          - name: image
+            value: registry-dev.alauda.io/platform-edge/tekton-catalog-incubator/script-tools:latest
+          - name: imagePullPolicy
+            value: Always
+          - name: script
+            value: |
+              #!/bin/bash
+              set -e
+              git config --global --add safe.directory $(workspaces.source.path)
+              cat <<EOM > $(results.object-result.path)
+              {
+                "commit_date": "$(git log -1 --pretty=%ct)",
+                "commit_sha": "$(git rev-parse HEAD)",
+                "short_id": "$(git rev-parse --short HEAD)",
+                "message": "gitlab commit meta"
+              }
+              EOM
+        taskRef:
+          resolver: hub
+          params:
+            - {name: catalog, value: catalog}
+            - {name: kind, value: task}
+            - {name: name, value: run-script}
+            - {name: version, value: "0.1"}
+        workspaces:
+          - name: source
+            workspace: source
+
+      # image rewritten: build-harbor.alauda.cn/devops/nexus-ce-base:latest ->
+      # {{ registry_url }}/alauda-devops-toolchain/nexus/nexus-ce-base:latest
+      # (the image build-base-image.yaml publishes -- P1/P2). This image MUST
+      # already be built and pushed before this task runs; build-base-image.yaml
+      # fires independently on image/** changes, so a fresh nexus-build clone
+      # relies on a prior green build-base-image run having published :latest.
+      - name: build-nexus-app
+        timeout: 2h
+        retries: 0
+        runAfter:
+          - git-clone
+        params:
+          - name: script
+            value: |
+              #!/bin/bash
+              set -xe
+
+              mkdir -p $(workspaces.cache.path)/yarncache
+              mkdir -p $(workspaces.cache.path)/m2cache
+
+              rm -rf $HOME/.m2/repository
+              rm -rf $(workspaces.source.path)/source/.yarn/cache
+              mkdir -p $(workspaces.source.path)/source/.yarn
+              mkdir -p $HOME/.m2
+
+              ln -s $(workspaces.cache.path)/m2cache $HOME/.m2/repository
+              ln -s $(workspaces.cache.path)/yarncache $(workspaces.source.path)/source/.yarn/cache
+
+              if [ "$(params.clean-cache)" == "true" ]; then
+                rm -rf $(workspaces.cache.path)/yarncache/*
+                rm -rf $(workspaces.cache.path)/m2cache/*
+              fi
+
+              cd $(workspaces.source.path)/source/
+              yarn -v
+              yarn install
+
+              ./mvnw -pl plugins/nexus-coreui-plugin,components/nexus-ui-plugin,components/nexus-rapture,components/nexus-swagger-filter -am clean install -Dpublic -DskipTests -s ./settings.xml
+
+              mkdir -p $(workspaces.source.path)/image/jar/
+              cp $(workspaces.source.path)/source/components/nexus-ui-plugin/target/nexus-ui-plugin-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-ui-plugin-3.76.0-03.jar
+              cp $(workspaces.source.path)/source/components/nexus-rapture/target/nexus-rapture-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-rapture-3.76.0-03.jar
+              cp $(workspaces.source.path)/source/plugins/nexus-coreui-plugin/target/nexus-coreui-plugin-3.76.0-03.jar $(workspaces.source.path)/image/jar/nexus-coreui-plugin-3.76.0-03.jar
+
+              # SwaggerAccessFilter: block unauthenticated access to Swagger API docs (DEVOPS-43719)
+              cp $(workspaces.source.path)/source/components/nexus-swagger-filter/target/nexus-swagger-filter-3.76.0-03.jar $(workspaces.source.path)/image/jar/swagger-access-filter.jar
+        workspaces:
+          - name: source
+            workspace: source
+          - name: cache
+            workspace: cache
+        taskSpec:
+          workspaces:
+            - name: source
+            - name: cache
+          params:
+            - name: script
+              type: string
+              default: ""
+          steps:
+            - name: run-script
+              image: "{{ registry_url }}/alauda-devops-toolchain/nexus/nexus-ce-base:latest"
+              imagePullPolicy: Always
+              # HOME explicitly set: UID 65532 (pod-level runAsUser, required by
+              # PodSecurity restricted) has no passwd entry / home dir in the
+              # nexus-ce-base image (plain apt-installed JDK on Ubuntu, no USER
+              # directive) -- $HOME defaulted to "/" (unwritable), confirmed live
+              # ("mkdir: cannot create directory '//.m2': Permission denied").
+              # Pointed at the source workspace (PVC-backed, writable regardless
+              # of UID) -- the script already mkdir's under here for .yarn/.m2.
+              #
+              # MAVEN_OPTS -Duser.home explicitly set: even with $HOME correct,
+              # the JVM's own user.home system property does NOT come from
+              # $HOME on Linux when getpwuid_r() finds no /etc/passwd entry for
+              # the running UID (65532, confirmed live: `java -XshowSettings:
+              # properties` -> "user.home = ?", a literal one-character "?").
+              # Maven's default localRepository is ${user.home}/.m2/repository,
+              # so with user.home broken it resolved to a bogus *relative*
+              # "?/.m2/repository" under the mvnw invocation's cwd
+              # (source/source/?/.m2/repository/...) instead of our intended
+              # $HOME/.m2/repository symlink to the cache PVC -- confirmed live
+              # in nexus-image-zb7cr's frontend-maven-plugin download log line.
+              # -Duser.home on the JVM command line overrides the broken
+              # auto-detection outright (confirmed via the same live repro).
+              env:
+                - name: HOME
+                  value: "$(workspaces.source.path)/home"
+                - name: MAVEN_OPTS
+                  value: "-Duser.home=$(workspaces.source.path)/home"
+              # PodSecurity "restricted" (edge-build namespace policy) requires
+              # these explicitly at container level -- pod-level runAsUser/fsGroup
+              # (taskRunTemplate.podTemplate, below) doesn't cover
+              # allowPrivilegeEscalation/capabilities (not inheritable fields;
+              # confirmed live PodAdmissionFailed on the first smoke). The
+              # catalog-provided tasks (git-clone, run-script@0.1) already bake
+              # this in; this is the one custom inline taskSpec, so it needs it too.
+              securityContext:
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              computeResources:
+                requests:
+                  cpu: "1"
+                  memory: "1Gi"
+                limits:
+                  cpu: "4"
+                  memory: "4Gi"
+              script: |
+                #!/bin/sh
+                RUN_ON=`cat /proc/$$/comm`
+                if [ "$RUN_ON" != "bash" ] && command -v bash >/dev/null 2>&1; then
+                    exec bash "$0" $@
+                fi
+                set -eu
+
+                $(params.script)
+
+      # buildx -> buildctl (buildx not in the catalog; buildctl is the served
+      # equivalent, extras/0.1). image-url rewritten:
+      # build-harbor.alauda.cn/devops/sonatype-nexus3 ->
+      # {{ registry_url }}/alauda-devops-toolchain/nexus/sonatype-nexus3 (P1/P2,
+      # THE server-image output path the operator's chart/values.yaml + e2e
+      # testdata expect -- confirmed via nexus-ce-operator's own
+      # integration-test-runtime-image-missing escalation, which names this
+      # exact repository path as the missing mirror). No `platform` override:
+      # buildctl's own default (linux/amd64,linux/arm64) applies, matching
+      # chart/values.yaml's `support_arm: true` flag on this image.
+      - name: build-nexus-image
+        timeout: 1h
+        retries: 2
+        taskRef:
+          resolver: hub
+          params:
+            - {name: catalog, value: extras}
+            - {name: kind, value: task}
+            - {name: name, value: buildctl}
+            - {name: version, value: "0.1"}
+        runAfter:
+          - build-nexus-app
+        workspaces:
+          - name: source
+            workspace: source
+          - name: registry-config
+            workspace: registry-config
+        params:
+          - name: imageURL
+            value: "{{ registry_url }}/alauda-devops-toolchain/nexus/sonatype-nexus3"
+          - name: imageTags
+            value:
+              - v3.76.0-g$(tasks.get-git-meta.results.object-result.short_id)
+          - name: containerfile
+            value: Containerfile.alpine.java17
+          - name: context
+            value: image
+
+      # katanomi.hub trivy-image-scan -> catalog trivy-scanner@0.6 (katanomi.hub
+      # resolver is unserved on edge-build, same family of gap as the type:tekton
+      # hub pipelines above). toolImage / dbRepository left at the task's own
+      # defaults (registry.alauda.cn:60070/... -- already the confirmed-reachable
+      # host+port per gitops FIX4; build-harbor.alauda.cn/ops/aquasecurity/trivy-db
+      # from the source pipeline was NOT ported, it was the unreachable host).
+      # Non-blocking (exitCode unset), matching source's default-off quality gate
+      # (image-scan-gate-enabled defaulted "false" upstream, never turned on).
+      - name: trivy-scanner
+        timeout: 60m
+        retries: 2
+        runAfter:
+          - build-nexus-image
+        taskRef:
+          resolver: hub
+          params:
+            - {name: catalog, value: catalog}
+            - {name: kind, value: task}
+            - {name: name, value: trivy-scanner}
+            - {name: version, value: "0.6"}
+        params:
+          - name: scanType
+            value: image
+          - name: scanTargets
+            value:
+              - "{{ registry_url }}/alauda-devops-toolchain/nexus/sonatype-nexus3:v3.76.0-g$(tasks.get-git-meta.results.object-result.short_id)"
+          - name: severity
+            value:
+              - HIGH
+              - CRITICAL
+          - name: ignoreUnfixed
+            value: "true"
+        workspaces:
+          - name: trivy-config
+            workspace: trivy-config
+          - name: registry-config
+            workspace: registry-config
+
+      # git-cli extras/0.4 -> catalog/0.5 (gitops fix commit 570a825: extras/0.4 is
+      # unresolvable on edge-build's hub shim, catalog/0.5 has 50 historical
+      # resolution successes there). 0.5's params are lowerCamelCase (breaking
+      # change from 0.4) and it declares NO `commit` result (unlike 0.4) -- the
+      # old --output-path $(results.commit.path) arg is dropped. `baseImage`
+      # kept as an explicit override (registry.alauda.cn:60070, the confirmed
+      # reachable port per gitops FIX5) rather than 0.5's own generic git-init
+      # default, because this script's git-push-commit.sh call needs the same
+      # chainguard/git image gitops's own dormant `commit` task also overrides
+      # baseImage for. basic-auth workspace switched from the old
+      # `github-credentials` secret to the code-alauda-io CSI connector (P2
+      # managed-connector; nexus-build now lives on code.alauda.io, not github).
+      - name: update-chart-values
+        timeout: 5m
+        retries: 2
+        runAfter:
+          - trivy-scanner
+        taskRef:
+          resolver: hub
+          params:
+            - {name: catalog, value: catalog}
+            - {name: kind, value: task}
+            - {name: name, value: git-cli}
+            - {name: version, value: "0.5"}
+        workspaces:
+          - name: source
+            workspace: source
+          - name: basic-auth
+            workspace: basic-auth
+        when:
+          - input: $(params.pull-request-number)
+            operator: in
+            values:
+              - ""
+              - " "
+        params:
+          - name: baseImage
+            value: registry.alauda.cn:60070/devops/nonroot/chainguard/git:latest
+          - name: gitUserName
+            value: "Alauda Bot"
+          - name: gitUserEmail
+            value: "alaudabot@alauda.io"
+          - name: userHome
+            value: "/home/git"
+          - name: verbose
+            value: "true"
+          - name: gitScript
+            value: |-
+              set -ex
+
+              cd $(workspaces.source.path)
+              git config --global --add safe.directory $(workspaces.source.path)
+
+              images=(
+                "{{ registry_url }}/alauda-devops-toolchain/nexus/sonatype-nexus3:v3.76.0-g$(tasks.get-git-meta.results.object-result.short_id)"
+              )
+
+              for image in "${images[@]}"; do
+                echo "===> update chart values $image"
+                bash ./hack/update-image-tag.sh $image chart/values.yaml
+              done
+
+              git status
+
+              if git diff --quiet -- chart/values.yaml; then
+                echo "No changes to commit"
+                git status
+                exit 0
+              fi
+
+              git add chart/values.yaml
+              git checkout .
+
+              COMMIT_MESSAGE="Auto-commit by alaudabot in edge [ci skip] - $(context.taskRun.namespace)/$(context.taskRun.name)"
+
+              git-push-commit.sh \
+                --revision $(params.git-revision) \
+                --source-path $(workspaces.source.path) \
+                --message "${COMMIT_MESSAGE}"
+
+    workspaces:
+      - name: source
+        description: Shared source checkout workspace.
+      - name: basic-auth
+        description: Git auth credentials injected by the code-alauda-io connector.
+      - name: registry-config
+        description: Docker registry auth mounted as config.json (registry-alauda-io).
+      - name: cache
+        description: Yarn/Maven build cache.
+      - name: trivy-config
+        description: ConfigMap with Trivy scanner configuration.
+
   workspaces:
     - name: source
+      # 2Gi -> 10Gi: confirmed live (nexus-image-g8gxl) "No space left on
+      # device" extracting node-v18.17.1-linux-x64.tar.gz (~160M unpacked)
+      # for the SECOND frontend-maven-plugin module (nexus-rapture) -- this
+      # is a fixed-size RWO topolvm (LVM) volume, not the elastic RWX cephfs
+      # cache PVC, so it genuinely fills: node gets unpacked once per module
+      # (4 modules: nexus-coreui-plugin/nexus-ui-plugin/nexus-rapture/
+      # nexus-swagger-filter) plus yarn's own node_modules per module plus
+      # full target/ compile output across the whole `-am` reactor (~60+
+      # transitively-built modules). 10Gi matches the same-cohort precedent
+      # (nexus-ce-operator's integration-test source workspace, also
+      # bumped from 1Gi -> 10Gi for the same class of build-cache sizing).
       volumeClaimTemplate:
         spec:
+          storageClassName: sc-topolvm
           accessModes:
-            - ReadWriteMany
+            - ReadWriteOnce
           resources:
             requests:
-              storage: 2Gi
+              storage: 10Gi
     - name: basic-auth
+      csi:
+        driver: connectors-csi
+        readOnly: true
+        volumeAttributes:
+          configuration.names: gitconfig
+          connector.name: code-alauda-io
+          connector.namespace: alauda-devops-toolchain
+          token.expiration: 30m
+    - name: registry-config
       secret:
-        secretName: github-credentials
-    - name: registryconfig
-      secret:
-        secretName: build-harbor.kauto.docfj
+        secretName: "{{ registry_secret }}"
     - name: cache
       persistentVolumeClaim:
         claimName: build-cache-nexus
+    - name: trivy-config
+      configMap:
+        name: trivy-config
 
   taskRunTemplate:
-    # 让所有任务都以非 root 用户运行。
     podTemplate:
       securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
         fsGroup: 65532
         fsGroupChangePolicy: "OnRootMismatch"
+      imagePullSecrets:
+        - name: "{{ registry_secret }}"
 
   taskRunSpecs:
     - pipelineTaskName: build-nexus-app
@@ -70,7 +473,7 @@ spec:
         limits:
           cpu: "2"
           memory: 2Gi
-    - pipelineTaskName: image-scan
+    - pipelineTaskName: trivy-scanner
       computeResources:
         limits:
           cpu: "4"

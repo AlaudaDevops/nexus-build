@@ -473,8 +473,39 @@ spec:
         limits:
           cpu: "2"
           memory: 2Gi
+    # DEVOPS-44489: the top-level `computeResources` field here only sets
+    # limits -- it does NOT override the catalog task's own per-step
+    # `computeResources` DEFAULTS, which trivy-scanner@0.6 sets to
+    # cpu:4/memory:4Gi REQUESTS on *both* steps (prepare-context AND
+    # trivy-scan), confirmed live via the pending pod's actual container specs
+    # (step-prepare-context and step-trivy-scan both requests+limits
+    # cpu:4/memory:4Gi -- 8 CPU/8Gi total for the pod). No edge-build node has
+    # 4 free CPU (`kubectl describe nodes` busiest node ~52% of a shared
+    # pool), so the pod is permanently unschedulable
+    # (FailedScheduling/ExceededNodeResources, "0/19 nodes ... 6 Insufficient
+    # cpu"), and the pipeline never reaches a terminal state. No proven green
+    # trivy-scanner run exists anywhere on edge-build to match (checked
+    # cluster-wide: only this repo's Pending/Cancelled runs). Fixed with a
+    # `stepSpecs` (v1) override per step, sized to the step's actual job
+    # (prepare-context is a light context-prep step; trivy-scan needs enough
+    # for the trivy DB + a ~900MB image) and well within a single node's
+    # capacity -- keeps the gate blocking (no change to scanType/severity/
+    # exitCode), just makes it schedulable.
     - pipelineTaskName: trivy-scanner
-      computeResources:
-        limits:
-          cpu: "4"
-          memory: 4Gi
+      stepSpecs:
+        - name: prepare-context
+          computeResources:
+            requests:
+              cpu: "250m"
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+        - name: trivy-scan
+          computeResources:
+            requests:
+              cpu: "500m"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi

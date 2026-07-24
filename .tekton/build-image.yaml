@@ -343,14 +343,35 @@ spec:
       # unresolvable on edge-build's hub shim, catalog/0.5 has 50 historical
       # resolution successes there). 0.5's params are lowerCamelCase (breaking
       # change from 0.4) and it declares NO `commit` result (unlike 0.4) -- the
-      # old --output-path $(results.commit.path) arg is dropped. `baseImage`
-      # kept as an explicit override (registry.alauda.cn:60070, the confirmed
-      # reachable port per gitops FIX5) rather than 0.5's own generic git-init
-      # default, because this script's git-push-commit.sh call needs the same
-      # chainguard/git image gitops's own dormant `commit` task also overrides
-      # baseImage for. basic-auth workspace switched from the old
-      # `github-credentials` secret to the code-alauda-io CSI connector (P2
-      # managed-connector; nexus-build now lives on code.alauda.io, not github).
+      # old --output-path $(results.commit.path) arg is dropped. basic-auth
+      # workspace switched from the old `github-credentials` secret to the
+      # code-alauda-io CSI connector (P2 managed-connector; nexus-build now
+      # lives on code.alauda.io, not github).
+      #
+      # DEVOPS-44489: `baseImage` re-pointed away from
+      # registry.alauda.cn:60070/devops/nonroot/chainguard/git:latest --
+      # UNREACHABLE from edge-build (confirmed via 2 real TaskRun failures,
+      # TCP connect timeouts to that host). Note 0.5's OWN default baseImage
+      # (registry.alauda.cn:60070/devops/tektoncd/hub/git-init:v1.1) is the
+      # SAME unreachable host, so simply dropping the override does not fix
+      # this -- an explicit reachable override is required either way. Now
+      # ->  registry-dev.alauda.io/platform-edge/tekton-catalog-incubator/
+      # script-tools:latest, matching the SAME proven fix already applied to
+      # get-git-meta above (gitops FIX4 commit d85bb3d) -- keeps this
+      # pipeline's tool images on one consistent, verified-reachable family
+      # instead of introducing a second one-off reachable host. Verified live
+      # from an edge-build debug pod before committing: image pulls, runs as
+      # its built-in nonroot UID 65532 with no extra securityContext.runAsUser
+      # needed (satisfies git-cli@0.5's runAsNonRoot requirement), and carries
+      # both `git` (2.53.0) and `bash` -- everything this step's script uses.
+      # `userHome` also moved /home/git -> /home/nonroot alongside it: the
+      # OLD chainguard/git image ships its nonroot user as "git" with HOME
+      # /home/git, but script-tools' nonroot user is "nonroot" with HOME
+      # /home/nonroot (confirmed live: `id` -> uid=65532(nonroot), `cat
+      # /etc/passwd` -> nonroot:...:/home/nonroot). Left at the old value
+      # this failed live on THIS branch (smoke nexus-image-smoke-mg2ms):
+      # `cp: cannot create regular file '/home/git/.gitconfig': No such
+      # file or directory` -- /home/git simply doesn't exist in this image.
       - name: update-chart-values
         timeout: 5m
         retries: 2
@@ -376,13 +397,13 @@ spec:
               - " "
         params:
           - name: baseImage
-            value: registry.alauda.cn:60070/devops/nonroot/chainguard/git:latest
+            value: registry-dev.alauda.io/platform-edge/tekton-catalog-incubator/script-tools:latest
           - name: gitUserName
             value: "Alauda Bot"
           - name: gitUserEmail
             value: "alaudabot@alauda.io"
           - name: userHome
-            value: "/home/git"
+            value: "/home/nonroot"
           - name: verbose
             value: "true"
           - name: gitScript

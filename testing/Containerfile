@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y ca-certificates tzdata bash locales mak
     nodejs \
     npm \
     openjdk-17-jdk \
+    libnss-wrapper \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && locale-gen en_US.UTF-8 \

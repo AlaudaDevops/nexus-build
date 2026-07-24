@@ -6,6 +6,52 @@ import pytest
 import allure
 from pathlib import Path
 
+# DEVOPS-44489: force Maven's own ${user.home} to agree with $HOME. The
+# run-test container runs as a non-root UID with no /etc/passwd entry, so
+# the JVM's user.home auto-detection (getpwuid_r()) falls back to a literal
+# "?" regardless of $HOME being set correctly -- exactly the same root
+# cause already diagnosed and fixed for the BUILD pipeline's build-nexus-app
+# step (see changes.patch's jvm-user-home-broken-uid-no-passwd decision:
+# MAVEN_OPTS=-Duser.home=...). Confirmed live here too (nexus-integration-
+# test-l5gsh, test_maven_publish): `mvn ... package` itself exits 0, but
+# Python's Path.home() (correctly $HOME-based) can't find the resulting jar
+# -- Maven silently resolved its default localRepository
+# (${user.home}/.m2/repository) to a bogus path under mvn's cwd instead of
+# $HOME/.m2/repository. Setting MAVEN_OPTS here (module import time, before
+# any mvn invocation via os.system) makes every mvn call in this file agree
+# with Path.home().
+if os.environ.get("HOME"):
+    _user_home_opt = f"-Duser.home={os.environ['HOME']}"
+    if _user_home_opt not in os.environ.get("MAVEN_OPTS", ""):
+        os.environ["MAVEN_OPTS"] = f"{os.environ.get('MAVEN_OPTS', '')} {_user_home_opt}".strip()
+
+
+def _maven_central_mirror_url():
+    """DEVOPS-44489: the default "central" mirror below (ucloud-nexus.alauda.cn,
+    an Alauda-internal Nexus proxy) is unreachable from edge-build build pods
+    -- confirmed live via a debug pod (`curl http://ucloud-nexus.alauda.cn:8081/`
+    -> "Connection timed out"). An earlier iteration of this fix pointed the
+    default at Maven Central's own public origin (repo.maven.apache.org) --
+    superseded per driver decision: use artifacts.alauda.io (an external,
+    anonymously-reachable Alauda mirror) as the standard anonymous mirror for
+    this cohort's e2e suites, matching the same host now used for the npm
+    proxy scenario below. Confirmed anonymously reachable (HTTP 200, no
+    auth) at https://artifacts.alauda.io/repository/maven-central and
+    /repository/maven-public; its REST API
+    (https://artifacts.alauda.io/service/rest/v1/repositories) is
+    anonymously listable and was used to confirm the exact repo path.
+    Overridable via MACVEN_MIRROR_REGISTRY, which the original code already
+    anticipated. Returns the FULL mirror URL (no trailing slash) -- callers
+    append "/" themselves -- since artifacts.alauda.io isn't Nexus-shaped
+    like ucloud-nexus.alauda.cn (no "/repository/<repo>/" path convention
+    beyond the one baked into this URL).
+    """
+    override = os.environ.get("MACVEN_MIRROR_REGISTRY")
+    if override:
+        return override.rstrip("/")
+    return "https://artifacts.alauda.io/repository/maven-central"
+
+
 def test_maven_publish(nexus_client, nexus_config, hosted_repo):
     with allure.step('Build and deploy Maven project'):
         project_path = Path(f'test_projects/maven')
@@ -14,7 +60,7 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo):
             create_server_config("nexus", nexus_config.username, nexus_config.password),
         ]
         mirrors_configs = [
-            create_mirror_config("ucloud", "central", os.environ.get("MACVEN_MIRROR_REGISTRY", "http://ucloud-nexus.alauda.cn:8081"), "maven-central")
+            create_mirror_config("ucloud", "central", _maven_central_mirror_url(), None)
         ]
         settings_path = create_settings(server_configs, mirrors_configs)
         publish_xml_path = project_path / 'publish.xml'
@@ -58,7 +104,7 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo):
         ]
         mirrors_configs = [
             create_mirror_config("nexus","nexus", nexus_config.url, hosted_repo),
-            create_mirror_config("ucloud", "central", os.environ.get("MACVEN_MIRROR_REGISTRY", "http://ucloud-nexus.alauda.cn:8081"), "maven-central")
+            create_mirror_config("ucloud", "central", _maven_central_mirror_url(), None)
         ]
         settings_path = create_settings(server_configs, mirrors_configs)
         project_path = Path(f'test_projects/maven')
@@ -80,7 +126,7 @@ def test_maven_proxy(nexus_client, nexus_config):
             "maven",
             "maven-central",
             "proxy",
-            r"{}/repository/maven-central/".format(os.environ.get("MACVEN_MIRROR_REGISTRY", "http://ucloud-nexus.alauda.cn:8081"))
+            f"{_maven_central_mirror_url()}/"
         )
 
     with allure.step('Download dependency'):
@@ -161,7 +207,16 @@ def create_mirror_config(id, replace, nexus_url, repo_name):
     mirror_of.text = replace
 
     mirror_url = ElementTree.SubElement(mirror, 'url')
-    mirror_url.text = f"{nexus_url}/repository/{repo_name}/"
+    # DEVOPS-44489: repo_name=None means nexus_url is ALREADY the complete
+    # mirror endpoint (used for the _maven_central_mirror_url() override --
+    # a public host like Maven Central isn't Nexus-shaped, so the
+    # "/repository/<repo>/" convention below doesn't apply to it). Existing
+    # callers keep passing repo_name and get the original composition
+    # unchanged.
+    if repo_name is None:
+        mirror_url.text = f"{nexus_url}/"
+    else:
+        mirror_url.text = f"{nexus_url}/repository/{repo_name}/"
 
     return mirror
 
@@ -177,5 +232,5 @@ def hosted_repo(nexus_client):
 def proxy_repo(nexus_client):
     t = time.strftime("%Y%m%d-%H%M%S")
     repo_name = f"maven-test-repo-{t}"
-    nexus_client.create_repository("maven", repo_name, "proxy", r"{}/repository/maven-central/".format(os.environ.get("MACVEN_MIRROR_REGISTRY", "http://ucloud-nexus.alauda.cn:8081")))
+    nexus_client.create_repository("maven", repo_name, "proxy", f"{_maven_central_mirror_url()}/")
     return repo_name

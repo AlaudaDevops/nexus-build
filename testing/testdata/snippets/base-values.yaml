@@ -1,9 +1,35 @@
 global:
+  # DEVOPS-44489: enabled: true (chart default) -- this suite's ctyun-vm
+  # single-node k3s throwaway cluster uses an nfs-default-backed
+  # StorageClass for PVC storage (added by this migration's
+  # prepare-cluster.sh RWX fix). fsGroup does NOT trigger a recursive
+  # chown on NFS-backed volumes (a well-known k8s limitation -- fsGroup
+  # only works for volume types that support SecurityContext ownership
+  # management, which excludes NFS), so nxrm-app's non-root UID (200)
+  # cannot mkdir/write into a freshly-provisioned NFS PV, and the
+  # chart's own init-log-dir init container CrashLoopBackOffs
+  # ("mkdir: Permission denied", confirmed live on
+  # nexus-integration-test-mfpcw's nodeport/storage-sc/storage-pvc
+  # scenarios -- Pod stuck Pending, init-log-dir exitCode 1 x7
+  # restarts). The chart already ships a matching fix for exactly this
+  # class of environment: global.permission.initContainer.enabled
+  # gates an explicit "volume-permissions" init container that chowns
+  # /nexus-data as root BEFORE init-log-dir runs (chart/templates/
+  # statefulset.yaml) -- same principle as the gitlab-chart cohort's
+  # hostPath-no-chown -> chown-inits fix for the same ctyun-vm/non-root
+  # NFS class of issue. This upstream snippet had it hardcoded false
+  # (commit 04a5c86, predates this migration) which only worked on
+  # whatever storage backend upstream's own CI provided (values-
+  # storage-hostpath.yaml already independently re-enables it to true
+  # for its own explicit hostPath volume, which is a different volume
+  # type that inherits node directory perms rather than PVC/NFS
+  # provisioner defaults -- hostpath is the only storage.feature
+  # scenario that self-heals without this base-level flip).
   permission:
     initContainer:
-      enabled: false
+      enabled: true
   registry:
-    address: <config.{{.registry.cluster | default "152-231-registry.alauda.cn:60070"}}>
+    address: <config.{{.registry.cluster | default "registry-dev.alauda.io"}}>
 secret:
   nexusAdminSecret:
     enabled: true

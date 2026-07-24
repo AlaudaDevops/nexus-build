@@ -26,7 +26,15 @@ branches:
   # file only feeds the shared Pipeline's internal test-image tag
   # computation; nexus-build's own product image tags are computed
   # separately by build-image.yaml's get-git-meta step, untouched).
+  #
+  # DEVOPS-44489 (2026-07-23, integration-test WO resume): regex widened
+  # `^migration$` -> `^migration(-inttest)?$` after the build/inttest split
+  # introduced a second long-lived branch, `migration-inttest` (MR !2). Same
+  # exact failure mode reproduced live on the new branch name
+  # (nexus-integration-test-9v6rl: "An orphaned branch 'migration-inttest'
+  # has been detected... No base versions determined") -- the regex is the
+  # only thing that changed, same label/increment shape as before.
   migration:
-    regex: ^migration$
+    regex: ^migration(-inttest)?$
     label: beta
     increment: Minor

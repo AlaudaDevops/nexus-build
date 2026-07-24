@@ -3,8 +3,64 @@ kind: PipelineRun
 metadata:
   name: nexus-integration-test
   annotations:
+    # DEVOPS-44489: Option-D (design decision, matching nexus-ce-operator's
+    # proven integration-test wiring). The hub `alauda` catalog's
+    # vcluster-integration-test@0.2 (type:tekton) is unserved on edge-build
+    # (resolver-gap family shared with the build pipelines) -- resolved via the
+    # shared `ctyun-vm-integration-test` Pipeline CR in the gitops repo
+    # (alauda-devops-toolchain/engineering/gitops, pipelines/ctyun-vm-integration-test/0.1),
+    # ArgoCD-synced into ns alauda-devops-toolchain-build, resolved with
+    # `resolver: cluster` -- confirmed live 2026-07-23.
+    #
+    # Deploy vs. test split (DIFFERENT from nexus-ce-operator's wiring -- this
+    # repo's own e2e is NOT the operator's e2e): nexus-build's testing/ suite
+    # (features/network.feature, features/storage.feature -- the `~@e2e`
+    # scenarios `make test-all` runs) deploys Nexus directly via THIS repo's
+    # own Helm chart (`chartPath: ../chart`, relative to testing/) *inside*
+    # each BDD scenario step ("使用 helm 部署实例到 ... 命名空间"), not via a
+    # separate pre-deploy phase -- so `deploy` does NOT install the
+    # component itself; the shared Pipeline's `run-test` task already
+    # exports KUBECONFIG pointed at the provisioned CTYun VM's k3s, which is
+    # all the chart-install steps need. `deploy` IS used, though (DEVOPS-44489,
+    # corrected 2026-07-23): the case scope must match the ORIGINAL github
+    # pipeline exactly (confirmed via origin/alauda-76.0's pre-migration
+    # .tekton/integration-test.yaml, which used vcluster-integration-test
+    # with real ingress synced from the host) -- network.feature's ingress
+    # http/https scenarios are IN scope and must actually pass, not be
+    # tagged @e2e to dodge the gap. `deploy` runs testing/script/prepare-
+    # cluster.sh, ported byte-for-byte from gitlab-ce-operator's migration
+    # branch (alauda-devops-toolchain/gitlab-ce-operator, same
+    # ctyun-vm-integration-test harness, same "ingress has no status IP on
+    # a throwaway single-node VM" gap, already proven green there): patches
+    # the baked ingress-nginx controller with --publish-status-address +
+    # --watch-ingress-without-class, stamps the VM node IP onto the
+    # controller Service's externalIPs/status.loadBalancer, and (for any
+    # RWX PVC nexus's own suite might need) makes a no-provisioner `nfs` SC
+    # the cluster default backed by a loop-generated all-access-mode hostPath
+    # PV pool (local-path v0.0.31 can't do RWX). Best-effort by design (the
+    # script always exits 0 -- see its own header); a hard failure here
+    # would skip run-test entirely via runAfter and burn the whole VM cycle
+    # with zero test signal. (features/operator.feature, the `@e2e`-tagged
+    # operator-deploy scenario `test-all` excludes, is nexus-ce-operator's
+    # own e2e concern -- out of scope here.)
     pipelinesascode.tekton.dev/on-comment: "^((/test-all)|(/integration-test))"
+    # DEVOPS-44489 trigger dedupe (2026-07-23): scoped to event == "pull_request"
+    # only. MR !2 (migration-inttest -> alauda-76.0) stays permanently open
+    # (never self-merged, same convention as MR !1 -- see gitRevision.
+    # pullRequestNumber comment below), so every push to migration-inttest
+    # delivers BOTH a GitLab "Push Hook" (event push, target_branch ==
+    # the pushed branch itself, e.g. "migration-inttest") AND a "Merge
+    # Request Hook" update (event pull_request, target_branch == the MR's
+    # target, "alauda-76.0") for the SAME commit. The previous expression
+    # only guarded target_branch (matched "alauda-76.0" from the MR event)
+    # with no event guard, so a target_branch value that also happened to
+    # match (e.g. a direct push landing on alauda-76.0, or any future
+    # branch-naming drift) could double-dispatch. Restricting to event ==
+    # "pull_request" makes exactly one event type eligible per change,
+    # matching nexus-ce-operator/gitlab-ce-operator's own convention of
+    # keying integration-test dispatch off the MR event, not the raw push.
     pipelinesascode.tekton.dev/on-cel-expression: |-
+      event == "pull_request" &&
       target_branch.matches("^(main|release-.*|alauda-.*)$") &&
       (
         "chart/**".pathChanged() ||
@@ -14,110 +70,283 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "5"
 spec:
   taskRunTemplate:
+    serviceAccountName: default
     podTemplate:
+      imagePullSecrets:
+        - name: "{{ registry_secret }}"
       securityContext:
         fsGroup: 65532
         fsGroupChangePolicy: "OnRootMismatch"
   taskRunSpecs:
     - pipelineTaskName: run-test
-      computeResources:
-        limits:
-          cpu: "4"
-          memory: 4Gi
+      # DEVOPS-44489: the top-level `computeResources` here previously only
+      # set `limits` (cpu:4/memory:4Gi) with no `requests` -- Kubernetes
+      # defaults an unset request to match a set limit for that resource, so
+      # the run-test pod's step-run-script container actually REQUESTED 4
+      # CPU / 4Gi (confirmed live via the pod's container spec:
+      # step-run-script requests==limits==cpu:4/memory:4Gi). No edge-build
+      # node in the untainted pool reliably has 4 free CPU under normal
+      # load (nexus-integration-test-s556l's run-test pod PENDED ~14m on
+      # FailedScheduling/ExceededNodeResources -- "0/19 nodes are
+      # available: ... 5 Insufficient cpu, 1 Insufficient memory, 14
+      # node(s) had untolerated taint(s)" -- before a node happened to free
+      # up), same class of problem as the trivy-scanner fix in
+      # build-image.yaml. run-test itself is a thin orchestrator (ssh/kubectl
+      # calls against the already-provisioned CTYun VM's k3s, `make
+      # test-all` driving the BDD suite) -- it does not need multiple local
+      # CPUs. Sized down via `stepSpecs` (step name `run-script`, matching
+      # the `step-run-script` container observed on the pod) to a request
+      # well within a single node's headroom, while keeping limits high
+      # enough for the allure report generation + test binary build burst.
+      stepSpecs:
+        - name: run-script
+          computeResources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
   timeouts:
-    pipeline: 5h
-    tasks: 5h
+    pipeline: 3h0m0s
+    tasks: 2h30m0s
+    finally: 30m0s
   pipelineRef:
-    resolver: hub
+    resolver: cluster
     params:
-      - name: catalog
-        value: alauda
-      - name: type
-        value: tekton
       - name: kind
         value: pipeline
       - name: name
-        value: vcluster-integration-test
-      - name: version
-        value: "0.2"
-
+        value: ctyun-vm-integration-test
+      - name: namespace
+        value: alauda-devops-toolchain-build
   params:
-    - name: git-revision
+    - name: gitRevision
       value:
         url: "{{ repo_url }}"
         branch: "{{ source_branch }}"
         commit: "{{ revision }}"
-        pull-request-number: "{{ pull_request_number }}"
-        pull-request-source: "{{ source_branch }}"
-        pull-request-target: "{{ target_branch }}"
-    - name: build-test-image
+        # Hardcoded empty, NOT "{{ pull_request_number }}" (unlike
+        # nexus-ce-operator's copy of this param): MR !1 (migration ->
+        # alauda-76.0) stays permanently open (never self-merged), so GitLab
+        # classifies EVERY push to `migration` as belonging to that MR --
+        # PaC then resolves {{ pull_request_number }} to "1" even for a
+        # plain push. The shared Pipeline's git-clone/git-version tasks wire
+        # prNumber straight from this field, and with prNumber set they
+        # fetch+checkout the synthetic `merge-requests/1/head` ref instead
+        # of the `migration` branch. That ref has no other local branch ref
+        # to compare against, so GitVersion classifies it "orphaned" and
+        # refuses to compute ANY baseline version -- confirmed live even
+        # with a real reachable tag present (v0.1.0): "An orphaned branch
+        # 'merge-requests/1/head' has been detected and will be
+        # skipped=True" -> "GitVersionException: No base versions
+        # determined". Forcing this empty makes git-clone/git-version
+        # resolve the plain `migration` branch by name instead -- matches
+        # this cohort's own established convention for telling a shared
+        # task "this is a push, not a PR build" (see build-image.yaml's
+        # update-chart-values task, which gates on
+        # pull-request-number in ["", " "] for the exact same reason).
+        pullRequestNumber: ""
+        pullRequestSource: "{{ source_branch }}"
+        pullRequestTarget: "{{ target_branch }}"
+    - name: deploy
       value:
-        image-repository: build-harbor.alauda.cn/devops/nexus-ce-test
-        containerfile-path: testing/Containerfile
-    - name: tag-template
-      value: "v3.76.0-g${ShortSha}"
+        # DEVOPS-44489: cluster-prep only (nexus itself deploys inside the
+        # BDD scenarios, see the annotation above) -- ported from
+        # gitlab-ce-operator's migration branch, same shared
+        # ctyun-vm-integration-test harness, same throwaway-VM ingress gap,
+        # already proven green there. golang:latest (not a dedicated
+        # kubectl image -- none exists for this repo yet) has bash+curl
+        # (confirmed live via a debug pod) but no kubectl; curl it once,
+        # matching gitlab-ce-operator's own fallback idiom for tools a
+        # generic image lacks.
+        image: "{{ registry_url }}/platform-edge/tekton-catalog-incubator/golang:latest"
+        command: |
+          set -ux
+          export SOURCE_PATH="$(workspaces.source.path)"
+          export PATH="/tmp:${PATH}"
+          command -v kubectl >/dev/null 2>&1 || { curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/v1.28.2/bin/linux/amd64/kubectl" && chmod +x /tmp/kubectl; }
+          bash "${SOURCE_PATH}/testing/script/prepare-cluster.sh" || echo "WARN: prepare-cluster failed"
+          exit 0
+    - name: buildTestImage
+      value:
+        # build-harbor.alauda.cn/devops/nexus-ce-test -> {{ registry_url }}/
+        # alauda-devops-toolchain/nexus/nexus-ce-test (P1/P2 host + path
+        # rewrite -- same output-path convention as nexus-ce-base /
+        # sonatype-nexus3, and the exact path nexus-ce-operator's own
+        # integration-test already publishes its test image to).
+        imageRepository: "{{ registry_url }}/alauda-devops-toolchain/nexus/nexus-ce-test"
+        containerfilePath: testing/Containerfile
     - name: test
       value:
+        # Ported from the original (pre-migration) test command -- only the
+        # KUBECONFIG line is dropped (the shared Pipeline's run-test task
+        # already exports KUBECONFIG pointed at the provisioned CTYun VM's
+        # k3s; the old `workspaces.config` workspace this used to read from
+        # doesn't exist on ctyun-vm-integration-test) -- plus the allure
+        # report generation folded in (the shared Pipeline has no separate
+        # generate-report task; run-test is expected to render it itself).
         command: |
-          set -x
-          export KUBECONFIG=$(workspaces.config.path)/vcluster-config
-          kubectl config view
-
-          cd $(workspaces.source.path)/testing
+          cd "$(workspaces.source.path)/testing"
           echo "run integration tests..."
           export GODOG_ARGS="--godog.concurrency=1 --godog.format=allure"
-          make test-all
-    - name: vcluster
+          # DEVOPS-44489: nexus-e2e/test_maven_repo.py's "central" Maven
+          # mirror defaults to ucloud-nexus.alauda.cn (Alauda-internal) --
+          # confirmed UNREACHABLE from the ctyun-vm test runner. Driver
+          # decision: use artifacts.alauda.io (external, anonymously
+          # reachable Alauda mirror) as this cohort's standard anonymous
+          # mirror -- confirmed HTTP 200/no-auth at
+          # https://artifacts.alauda.io/repository/maven-central. Matches
+          # test_maven_repo.py's own default (this override is redundant
+          # with it but kept for pipeline-level visibility/discoverability).
+          export MACVEN_MIRROR_REGISTRY="https://artifacts.alauda.io/repository/maven-central"
+          # DEVOPS-44489: the deploy-time ingress-nginx --publish-status-address fix
+          # (testing/script/prepare-cluster.sh, byte-identical to gitlab-chart's own
+          # proven prepare-cluster.sh) is NECESSARY but NOT SUFFICIENT on its own --
+          # confirmed by two clean, directly-comparable data points with near-identical
+          # deploy->run-test gaps (~5min / ~4min):
+          #   nexus-integration-test-zpx7h (had this daemon): scenario 61's precondition
+          #     PASSED.
+          #   nexus-integration-test-6w8qn (daemon removed to isolate the deploy-time
+          #     fix per driver request): scenario 61/71's precondition FAILED again,
+          #     same ~10s-flat "ingress resource has no ingress ip" as the original
+          #     9lvp4 diagnosis.
+          # ingress-nginx's status.Syncer writes a NEW Ingress's status on its own
+          # periodic tick (empirically ~30-60s, confirmed via prepare-cluster.sh's own
+          # probe taking 6x5s polls to get an IP); bdd's StepExistIngressController
+          # (vendored, not repo-local) gives up after ~10s flat -- a genuine race, not
+          # a one-off fluke, so relying on the deploy-time config alone is flaky by
+          # construction regardless of how long deploy->run-test waits. This background
+          # loop directly patches every Ingress's status subresource to the VM node IP
+          # every 2s for the whole test run, making any newly created Ingress
+          # (including bdd's own classless probe) get its IP well inside that ~10s
+          # window regardless of the controller's own tick timing. kubectl here already
+          # targets the VM (same KUBECONFIG the shared run-test task exports).
+          INGRESS_DAEMON_PID=""
+          NODE_IP="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || true)"
+          if [ -n "${NODE_IP:-}" ]; then
+            ( while true; do
+                kubectl get ingress -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}' 2>/dev/null | \
+                  while IFS=/ read -r ns name; do
+                    [ -z "${name:-}" ] && continue
+                    kubectl patch ingress "${name}" -n "${ns}" --type=merge --subresource=status \
+                      -p "{\"status\":{\"loadBalancer\":{\"ingress\":[{\"ip\":\"${NODE_IP}\"}]}}}" >/dev/null 2>&1 || true
+                  done
+                sleep 2
+              done ) &
+            INGRESS_DAEMON_PID=$!
+          else
+            echo "WARN: no VM node IP -- ingress-status-daemon not started"
+          fi
+          # DEVOPS-44489 (driver request 2026-07-23): stream e2e output live to the
+          # step's own console (kubectl logs -f), not just buffered to gotest.log and
+          # cat'd at the end -- `> gotest.log 2>&1` gave zero visibility into a run in
+          # progress. `tee` keeps gotest.log for allure/upload-report while also
+          # writing stdout; `set -o pipefail` + PIPESTATUS[0] preserve make's real
+          # exit code through the pipe (a bare `$?` after a pipeline is tee's exit
+          # code, always 0, which would silently turn every test failure green).
+          set +e
+          set -o pipefail
+          make test-all 2>&1 | tee gotest.log
+          TEST_EXIT=${PIPESTATUS[0]}
+          [ -n "${INGRESS_DAEMON_PID}" ] && kill "${INGRESS_DAEMON_PID}" 2>/dev/null || true
+          set +o pipefail
+          set -e
+          echo "===== gotest.log (TEST_EXIT=${TEST_EXIT}) ====="
+          cat gotest.log || true
+          # DEVOPS-44489 (coordinator fix, 2026-07-24): seed allure-results
+          # before generating the report -- without this, run-test's uploaded
+          # allure report came out EMPTY (widgets/summary.json 404 on the
+          # report URL). Matches gitlab-ce-operator's working run-test block
+          # (origin/main .tekton/integration-test.yaml, run-test step ~L101-
+          # 113), which seeds allure-results the same way before calling
+          # `allure generate` -- gotest.log + prepare-cluster.sh's own
+          # deploy-diag.log land in the report even when godog's allure
+          # formatter itself emits nothing.
+          mkdir -p allure-results
+          cp gotest.log allure-results/ 2>/dev/null || true
+          cp "$(workspaces.source.path)/testing/deploy-diag.log" allure-results/ 2>/dev/null || true
+          if command -v allure >/dev/null 2>&1; then
+            allure generate --clean -o allure-report allure-results || echo "WARN: allure generate failed"
+          fi
+          exit "${TEST_EXIT}"
+    - name: reportUpload
       value:
-        custom-config: |
-          sync:
-            toHost:
-              ingresses:
-                enabled: true
-            fromHost:
-              storageClasses:
-                enabled: true
-              ingressClasses:
-                enabled: true
-    - name: report
+        dirs: "testing/allure-report testing/allure-results"
+        # DEVOPS-44489 (coordinator fix, 2026-07-24): explicit baseURL
+        # override -- without it, reportUpload's own default resolved to
+        # http://10.68.120.42:30880, which is the alauda-PIPELINES-build
+        # namespace's report-server (NodePort 30880), NOT this cohort's
+        # alauda-devops-toolchain-build one (NodePort 30884/30885) -- the
+        # uploaded report 404'd because the URL pointed at a different S3
+        # bucket entirely (confirmed live: nexus-integration-test-s9wsn's
+        # upload-report log shows a full, correct upload -- 10/10 scenarios,
+        # real per-scenario result.json/container.json from godog's allure
+        # formatter, not just seeded logs -- to
+        # s3/platform-edge-alauda-devops-toolchain-build-cache/e2e-report/...;
+        # only the reported URL was wrong). Matches gitlab-ce-operator's own
+        # ctyun-vm-integration-test wiring, which already carries the same
+        # override for the same reason (origin/main .tekton/
+        # integration-test.yaml). NOTE (flagged to the driver, not fixed
+        # here): gitlab-ce-operator's own override (10.68.120.42) had
+        # already gone stale by the time of this fix -- that IP is no longer
+        # in the cluster's node list -- so ANY hardcoded node IP is fragile
+        # to node churn; this is a shared reportUpload-task design gap
+        # (should resolve a stable Service/Ingress host, not a raw node IP),
+        # out of this repo-local patch's scope to fix. Re-verify this IP is
+        # still live before relying on it long-term.
+        baseURL: http://10.68.120.129:30884
+    - name: vmLabels
       value:
-        command: |
-          cd $(workspaces.source.path)/testing
-          allure generate --clean
-
-          echo "Listing contents of report directory"
-          ls -al
-        path: testing/allure-report
+        - "purpose=nexus-build-e2e"
   workspaces:
-    - name: kube-config
-      volumeClaimTemplate:
-        spec:
-          accessModes:
-            - ReadWriteMany
-          resources:
-            requests:
-              storage: 50Mi
-    - name: cache
-      persistentVolumeClaim:
-        claimName: build-cache
-      subPath: golang
     - name: source
       volumeClaimTemplate:
         spec:
           accessModes:
-            - ReadWriteMany
+            - ReadWriteOnce
+          storageClassName: sc-topolvm
+          resources:
+            requests:
+              storage: 2Gi
+    - name: cache
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: sc-topolvm
           resources:
             requests:
               storage: 1Gi
-    - name: upload-conf
-      secret:
-        secretName: upload-allure-report-conf
-    - name: registryconfig
-      secret:
-        secretName: build-harbor.kauto.docfj
     - name: basic-auth
+      csi:
+        driver: connectors-csi
+        readOnly: true
+        volumeAttributes:
+          configuration.names: "gitconfig"
+          connector.name: code-alauda-io
+          connector.namespace: alauda-devops-toolchain
+          token.expiration: 30m
+    - name: ctyun-creds
       secret:
-        secretName: github-credentials
-    - name: gitversion-config
+        secretName: ctyun-ecs-credentials
+    - name: registry-creds
+      secret:
+        secretName: "{{ registry_secret }}"
+    - name: vm-config
       configMap:
-        name: gitversion-config
+        name: ctyun-vm-config
+    - name: registry-config
+      secret:
+        secretName: "{{ registry_secret }}"
+    - name: test-config
+      secret:
+        secretName: "{{ registry_secret }}"
+    - name: report-credentials
+      csi:
+        driver: connectors-csi
+        readOnly: true
+        volumeAttributes:
+          configuration.names: "aws-env"
+          connectors: alauda-devops-toolchain/object-storage-build-cache
+          token.expiration: 60m

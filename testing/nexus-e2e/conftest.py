@@ -1,7 +1,9 @@
 import os
 from dataclasses import dataclass
+from typing import Optional
 import pytest
 from dotenv import load_dotenv
+from libs.maven_upstream import MavenUpstreamConfig, load_maven_upstream
 from libs.nexus_client import NexusClient
 
 load_dotenv()
@@ -19,6 +21,10 @@ def nexus_config() -> NexusConfig:
         username=os.getenv("NEXUS_USERNAME", ""),
         password=os.getenv("NEXUS_PASSWORD", "")
     )
+
+@pytest.fixture(scope="session")
+def maven_upstream_config() -> Optional[MavenUpstreamConfig]:
+    return load_maven_upstream(os.environ)
 
 @pytest.fixture(scope="session")
 def nexus_client(nexus_config: NexusConfig) -> NexusClient:

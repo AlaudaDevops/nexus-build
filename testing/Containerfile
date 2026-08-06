@@ -17,7 +17,7 @@ RUN set -eux; \
 # ea564b6/f424f0e/13536db for release-3.76 DEVOPS-44489). hub-mirrors.alauda.cn
 # is ALSO unreachable from the same buildkit builders (only registry-dev.alauda.io
 # mirrors are reachable) -- use the registry-dev platform-edge mirror (same tag). ----
-FROM registry-dev.alauda.io/platform-edge/python:3.12-slim
+FROM registry-dev.alauda.io/platform-edge/python:3.12-slim AS test-base
 
 WORKDIR /tools
 RUN mkdir -p /tools/bin
@@ -84,9 +84,34 @@ RUN wget https://github.com/allure-framework/allure2/releases/download/${ALLURE_
     && ln -s /opt/allure-${ALLURE_VERSION}/bin/allure /usr/local/bin/allure \
     && rm allure-${ALLURE_VERSION}.tgz
 
+# ---- Maven E2E dependency bundle ----
+FROM test-base AS maven-bundle
+
+ARG MAVEN_BUNDLE_MIRROR_URL=https://artifacts.alauda.io/repository/maven-central
+COPY testing/nexus-e2e/test_projects/maven /tmp/nexus-e2e-maven
+COPY testing/hack/prepare-maven-e2e-bundle.sh /usr/local/bin/prepare-maven-e2e-bundle
+RUN chmod 755 /usr/local/bin/prepare-maven-e2e-bundle && \
+    PATH=/tools/bin/maven/bin:$PATH MAVEN_BUNDLE_MIRROR_URL=$MAVEN_BUNDLE_MIRROR_URL \
+      /usr/local/bin/prepare-maven-e2e-bundle /tmp/nexus-e2e-maven /opt/nexus-e2e/maven-bundle && \
+    mv /opt/nexus-e2e/maven-bundle/repository /opt/nexus-e2e/maven-repository && \
+    rmdir /opt/nexus-e2e/maven-bundle && \
+    find /opt/nexus-e2e/maven-repository -type d -exec chmod 755 {} + && \
+    find /opt/nexus-e2e/maven-repository -type f -exec chmod 644 {} +
+
 # ---- test-image, original testing/Containerfile final stage ----
+FROM test-base AS test-image
+
 RUN mkdir -p /tools/bin
 COPY --from=builder /tools/bin /tools/bin
+
+COPY --from=maven-bundle /opt/nexus-e2e/maven-repository /opt/nexus-e2e/maven-repository
+COPY testing/hack/import-maven-e2e-dependencies.py /usr/local/bin/import-maven-e2e-dependencies
+RUN chmod 755 /usr/local/bin/import-maven-e2e-dependencies && \
+    test -r /opt/nexus-e2e/maven-repository/junit/junit/4.11/junit-4.11.jar && \
+    test -r /opt/nexus-e2e/maven-repository/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar && \
+    test -r /opt/nexus-e2e/maven-repository/org/apache/maven/plugins/maven-deploy-plugin/2.8.2/maven-deploy-plugin-2.8.2.jar && \
+    test -r /opt/nexus-e2e/maven-repository/org/apache/maven/plugins/maven-deploy-plugin/2.8.2/maven-deploy-plugin-2.8.2.pom && \
+    test -x /usr/local/bin/import-maven-e2e-dependencies
 
 COPY . /app
 

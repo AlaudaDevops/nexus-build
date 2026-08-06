@@ -126,27 +126,7 @@ spec:
         url: "{{ repo_url }}"
         branch: "{{ source_branch }}"
         commit: "{{ revision }}"
-        # Hardcoded empty, NOT "{{ pull_request_number }}" (unlike
-        # nexus-ce-operator's copy of this param): MR !1 (migration ->
-        # alauda-76.0) stays permanently open (never self-merged), so GitLab
-        # classifies EVERY push to `migration` as belonging to that MR --
-        # PaC then resolves {{ pull_request_number }} to "1" even for a
-        # plain push. The shared Pipeline's git-clone/git-version tasks wire
-        # prNumber straight from this field, and with prNumber set they
-        # fetch+checkout the synthetic `merge-requests/1/head` ref instead
-        # of the `migration` branch. That ref has no other local branch ref
-        # to compare against, so GitVersion classifies it "orphaned" and
-        # refuses to compute ANY baseline version -- confirmed live even
-        # with a real reachable tag present (v0.1.0): "An orphaned branch
-        # 'merge-requests/1/head' has been detected and will be
-        # skipped=True" -> "GitVersionException: No base versions
-        # determined". Forcing this empty makes git-clone/git-version
-        # resolve the plain `migration` branch by name instead -- matches
-        # this cohort's own established convention for telling a shared
-        # task "this is a push, not a PR build" (see build-image.yaml's
-        # update-chart-values task, which gates on
-        # pull-request-number in ["", " "] for the exact same reason).
-        pullRequestNumber: ""
+        pullRequestNumber: "{{ pull_request_number }}"
         pullRequestSource: "{{ source_branch }}"
         pullRequestTarget: "{{ target_branch }}"
     - name: deploy
@@ -327,6 +307,9 @@ spec:
           connector.name: code-alauda-io
           connector.namespace: alauda-devops-toolchain
           token.expiration: 30m
+    - name: gitversion-config
+      configMap:
+        name: gitversion-config
     - name: ctyun-creds
       secret:
         secretName: ctyun-ecs-credentials

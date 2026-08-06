@@ -3,7 +3,14 @@ from xml.etree import ElementTree
 from urllib.parse import urljoin
 
 
-def _get_repository_config(repo_format, repo_name, repo_type="hosted", remote_url=None):
+def _get_repository_config(
+    repo_format,
+    repo_name,
+    repo_type="hosted",
+    remote_url=None,
+    remote_username=None,
+    remote_password=None,
+):
     base_config = {
         "name": repo_name,
         "online": True,
@@ -23,6 +30,11 @@ def _get_repository_config(repo_format, repo_name, repo_type="hosted", remote_ur
     }
 
     if repo_type == "proxy":
+        if (remote_username is None) != (remote_password is None):
+            raise ValueError(
+                "remote_username and remote_password must be provided together"
+            )
+
         base_config.update({
             "proxy": {
                 "remoteUrl": remote_url,
@@ -46,6 +58,12 @@ def _get_repository_config(repo_format, repo_name, repo_type="hosted", remote_ur
                 }
             }
         })
+        if remote_username is not None:
+            base_config["httpClient"]["authentication"] = {
+                "type": "username",
+                "username": remote_username,
+                "password": remote_password,
+            }
 
     if repo_format == "maven":
         base_config.update({
@@ -74,10 +92,25 @@ class NexusClient:
         response.raise_for_status()
         return response
     
-    def update_proxy_config(self, repo_format, repo_name, repo_type="proxy", remote_url=None):
+    def update_proxy_config(
+        self,
+        repo_format,
+        repo_name,
+        repo_type="proxy",
+        remote_url=None,
+        remote_username=None,
+        remote_password=None,
+    ):
         """更新maven代理配置"""
         endpoint = f"service/rest/v1/repositories/{repo_format}/{repo_type}/{repo_name}"
-        config = _get_repository_config(repo_format, repo_name, repo_type, remote_url)
+        config = _get_repository_config(
+            repo_format,
+            repo_name,
+            repo_type,
+            remote_url,
+            remote_username,
+            remote_password,
+        )
         response = self.session.put(urljoin(self.base_url, endpoint), json=config)
         response.raise_for_status()
         return response

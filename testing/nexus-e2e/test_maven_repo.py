@@ -6,6 +6,8 @@ import pytest
 import allure
 from pathlib import Path
 
+from libs.maven_upstream import select_proxy_remote
+
 # DEVOPS-44489: force Maven's own ${user.home} to agree with $HOME. The
 # run-test container runs as a non-root UID with no /etc/passwd entry, so
 # the JVM's user.home auto-detection (getpwuid_r()) falls back to a literal
@@ -122,11 +124,14 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo):
 
 def test_maven_proxy(nexus_client, nexus_config):
     with allure.step('Set nexus proxy config'):
+        remote = select_proxy_remote(os.environ)
         nexus_client.update_proxy_config(
             "maven",
             "maven-central",
             "proxy",
-            f"{_maven_central_mirror_url()}/"
+            remote.url,
+            remote.username,
+            remote.password,
         )
 
     with allure.step('Download dependency'):

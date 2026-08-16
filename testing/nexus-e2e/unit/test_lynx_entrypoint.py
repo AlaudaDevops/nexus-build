@@ -234,14 +234,14 @@ install_operator
 def test_olm_wait_value_bounds_hung_probe_and_emits_heartbeat():
     started_at = time.monotonic()
     result = run_olm_bash(
-        '_hung_olm_probe() { sleep 10; printf ready; }; _olm_wait_value "hung OLM probe" ready 1 _hung_olm_probe',
+        '_hung_olm_probe() { sleep 10; printf ready; }; _olm_wait_value "hung OLM probe" ready 3 _hung_olm_probe',
         env={"LYNX_POLL_INTERVAL": "1", "LYNX_WAIT_HEARTBEAT": "1"},
-        timeout=3,
+        timeout=5,
     )
 
     assert result.returncode != 0
-    assert time.monotonic() - started_at < 3
-    assert "waiting" in result.stderr.lower()
+    assert time.monotonic() - started_at < 5
+    assert result.stderr.lower().count("waiting") >= 2
     assert "timed out" in result.stderr.lower()
 
 
@@ -250,14 +250,37 @@ def test_wait_for_install_plan_bounds_hung_kubectl_and_emits_heartbeat(tmp_path)
     started_at = time.monotonic()
     result = run_olm_bash(
         "wait_for_install_plan",
-        env=olm_env(tmp_path, LYNX_INSTALL_TIMEOUT="1"),
-        timeout=3,
+        env=olm_env(tmp_path, LYNX_INSTALL_TIMEOUT="3"),
+        timeout=5,
     )
 
     assert result.returncode != 0
-    assert time.monotonic() - started_at < 3
-    assert "waiting" in result.stderr.lower()
+    assert time.monotonic() - started_at < 5
+    assert result.stderr.lower().count("waiting") >= 2
     assert "timed out" in result.stderr.lower()
+
+
+def test_wait_for_install_plan_bounds_hung_approval_patch(tmp_path):
+    write_fake_kubectl(
+        tmp_path,
+        '''
+if [[ "$*" == *"get subscription"* ]]; then
+  printf '%s\n' '{"status":{"installPlanRef":{"name":"ip-one"}}}'
+elif [[ "$*" == *"patch installplan ip-one"* ]]; then
+  sleep 10
+fi
+''',
+    )
+    started_at = time.monotonic()
+    result = run_olm_bash(
+        "wait_for_install_plan",
+        env=olm_env(tmp_path, LYNX_INSTALL_TIMEOUT="2"),
+        timeout=4,
+    )
+
+    assert result.returncode != 0
+    assert time.monotonic() - started_at < 4
+    assert "deadline" in result.stderr.lower()
 
 
 def test_log_and_fatal_write_timestamped_messages_to_stderr():

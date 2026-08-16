@@ -19,7 +19,7 @@ _olm_timeout() {
 _olm_wait_value() {
   local description=$1 expected=$2 timeout_seconds=$3
   shift 3
-  local started=$SECONDS current remaining sleep_for
+  local started=$SECONDS current remaining sleep_for probe_timeout
   local poll_interval=${LYNX_POLL_INTERVAL:-5}
   local heartbeat_interval=${LYNX_WAIT_HEARTBEAT:-30}
   local next_heartbeat=$SECONDS
@@ -33,14 +33,17 @@ _olm_wait_value() {
   while :; do
     remaining=$((timeout_seconds - (SECONDS - started)))
     ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for ${description}"; return 1; }
-    current=$(_olm_timed_probe "$remaining" "$@") || current=
-    [[ $current == "$expected" ]] && return 0
-    remaining=$((timeout_seconds - (SECONDS - started)))
-    ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for ${description}"; return 1; }
     if ((SECONDS >= next_heartbeat)); then
       log "Waiting for ${description} (${SECONDS-started}s elapsed)"
       next_heartbeat=$((SECONDS + heartbeat_interval))
     fi
+    probe_timeout=$((next_heartbeat - SECONDS))
+    ((probe_timeout < 1)) && probe_timeout=1
+    ((probe_timeout > remaining)) && probe_timeout=$remaining
+    current=$(_olm_timed_probe "$probe_timeout" "$@") || current=
+    [[ $current == "$expected" ]] && return 0
+    remaining=$((timeout_seconds - (SECONDS - started)))
+    ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for ${description}"; return 1; }
     sleep_for=$poll_interval
     ((sleep_for > remaining)) && sleep_for=$remaining
     sleep "$sleep_for"
@@ -170,7 +173,7 @@ _subscription_state() {
 }
 
 wait_for_install_plan() {
-  local timeout_seconds started state install_plan phase remaining sleep_for
+  local timeout_seconds started state install_plan phase remaining sleep_for probe_timeout
   local poll_interval=${LYNX_POLL_INTERVAL:-5}
   local heartbeat_interval=${LYNX_WAIT_HEARTBEAT:-30}
   local next_heartbeat=$SECONDS
@@ -184,38 +187,55 @@ wait_for_install_plan() {
   while :; do
     remaining=$((timeout_seconds - (SECONDS - started)))
     ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan reference"; return 1; }
-    state=$(_olm_timed_probe "$remaining" _subscription_state) || state=waiting
+    if ((SECONDS >= next_heartbeat)); then
+      log "Waiting for InstallPlan reference (${SECONDS-started}s elapsed)"
+      next_heartbeat=$((SECONDS + heartbeat_interval))
+    fi
+    probe_timeout=$((next_heartbeat - SECONDS))
+    ((probe_timeout < 1)) && probe_timeout=1
+    ((probe_timeout > remaining)) && probe_timeout=$remaining
+    state=$(_olm_timed_probe "$probe_timeout" _subscription_state) || state=waiting
     case $state in
       terminal:*) log "ERROR: Subscription reported ${state#terminal:}"; return 1 ;;
       ready:*) install_plan=${state#ready:}; break ;;
     esac
     remaining=$((timeout_seconds - (SECONDS - started)))
     ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan reference"; return 1; }
-    if ((SECONDS >= next_heartbeat)); then
-      log "Waiting for InstallPlan reference (${SECONDS-started}s elapsed)"
-      next_heartbeat=$((SECONDS + heartbeat_interval))
-    fi
     sleep_for=$poll_interval
     ((sleep_for > remaining)) && sleep_for=$remaining
     sleep "$sleep_for"
   done
-  kubectl patch installplan "$install_plan" -n "$OPERATOR_NAMESPACE" \
-    --type merge -p '{"spec":{"approved":true}}' >/dev/null || return 1
+  remaining=$((timeout_seconds - (SECONDS - started)))
+  ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s before InstallPlan approval"; return 1; }
+  timeout "${remaining}s" kubectl patch installplan "$install_plan" -n "$OPERATOR_NAMESPACE" \
+    --type merge -p '{"spec":{"approved":true}}' >/dev/null || {
+      log "ERROR: failed to approve InstallPlan within the installation deadline"
+      return 1
+    }
+  next_heartbeat=$SECONDS
   while :; do
-    remaining=$((timeout_seconds - (SECONDS - started)))
-    ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan completion"; return 1; }
-    state=$(_olm_timed_probe "$remaining" _subscription_state) || state=waiting
-    case $state in terminal:*) log "ERROR: Subscription reported ${state#terminal:}"; return 1 ;; esac
-    phase=$(timeout "${remaining}s" kubectl get installplan "$install_plan" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
-      jq -r '.status.phase // ""')
-    [[ $phase == Complete ]] && return 0
-    [[ $phase == Failed ]] && { log "ERROR: InstallPlan failed"; return 1; }
     remaining=$((timeout_seconds - (SECONDS - started)))
     ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan completion"; return 1; }
     if ((SECONDS >= next_heartbeat)); then
       log "Waiting for InstallPlan completion (${SECONDS-started}s elapsed)"
       next_heartbeat=$((SECONDS + heartbeat_interval))
     fi
+    probe_timeout=$((next_heartbeat - SECONDS))
+    ((probe_timeout < 1)) && probe_timeout=1
+    ((probe_timeout > remaining)) && probe_timeout=$remaining
+    state=$(_olm_timed_probe "$probe_timeout" _subscription_state) || state=waiting
+    case $state in terminal:*) log "ERROR: Subscription reported ${state#terminal:}"; return 1 ;; esac
+    remaining=$((timeout_seconds - (SECONDS - started)))
+    ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan completion"; return 1; }
+    probe_timeout=$((next_heartbeat - SECONDS))
+    ((probe_timeout < 1)) && probe_timeout=1
+    ((probe_timeout > remaining)) && probe_timeout=$remaining
+    phase=$(timeout "${probe_timeout}s" kubectl get installplan "$install_plan" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
+      jq -r '.status.phase // ""')
+    [[ $phase == Complete ]] && return 0
+    [[ $phase == Failed ]] && { log "ERROR: InstallPlan failed"; return 1; }
+    remaining=$((timeout_seconds - (SECONDS - started)))
+    ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan completion"; return 1; }
     sleep_for=$poll_interval
     ((sleep_for > remaining)) && sleep_for=$remaining
     sleep "$sleep_for"

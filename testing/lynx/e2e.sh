@@ -119,6 +119,10 @@ generate_allure_report() {
     log "Allure report generation skipped because normalized results are empty"
     return 0
   fi
+  if [[ -L $report ]]; then
+    log "ERROR: Allure report destination must not be a symbolic link"
+    return 1
+  fi
 
   allure generate "$results" --clean -o "$report" || {
     log "Allure report generation failed; raw results were retained"

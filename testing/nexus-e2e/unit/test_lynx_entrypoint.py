@@ -1013,6 +1013,38 @@ def test_generate_allure_report_is_attempted_for_nonempty_results(tmp_path):
     )
 
 
+def test_generate_allure_report_rejects_symlink_destination_without_invoking_allure(tmp_path):
+    result_dir = tmp_path / "results"
+    raw = result_dir / "allure-result"
+    raw.mkdir(parents=True)
+    (raw / "one-result.json").write_text("{}\n")
+    protected = tmp_path / "protected-report"
+    protected.mkdir()
+    (protected / "keep").write_text("unchanged\n")
+    (result_dir / "allure-report").symlink_to(protected)
+    marker = tmp_path / "allure-called"
+    fake_allure = tmp_path / "allure"
+    fake_allure.write_text(
+        "#!/usr/bin/env bash\n"
+        'touch "$LYNX_TEST_MARKER"\n'
+        "exit 99\n"
+    )
+    fake_allure.chmod(0o755)
+
+    result = run_e2e_bash(
+        "generate_allure_report",
+        env={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "RESULT_DIR": str(result_dir),
+            "LYNX_TEST_MARKER": str(marker),
+        },
+    )
+
+    assert result.returncode != 0
+    assert (protected / "keep").read_text() == "unchanged\n"
+    assert not marker.exists()
+
+
 @pytest.mark.parametrize("test_exit", [0, 37])
 def test_run_e2e_raw_copy_failure_is_not_masked_and_preserves_test_failure(tmp_path, test_exit):
     testing_dir = tmp_path / "testing"

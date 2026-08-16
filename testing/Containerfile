@@ -75,7 +75,7 @@ RUN set -eux; \
 ARG ALLURE_VERSION=2.24.1
 RUN wget https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz \
     && tar -zxvf allure-${ALLURE_VERSION}.tgz -C /opt/ \
-    && ln -s /opt/allure-${ALLURE_VERSION}/bin/allure /usr/local/bin/allure \
+    && ln -sfn /opt/allure-${ALLURE_VERSION}/bin/allure /usr/local/bin/allure \
     && rm allure-${ALLURE_VERSION}.tgz
 
 # ---- Maven E2E dependency bundle ----

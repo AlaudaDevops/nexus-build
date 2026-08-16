@@ -899,6 +899,73 @@ def test_collect_allure_results_normalizes_raw_results(tmp_path):
     assert (result_dir / "allure-result" / "one-result.json").is_file()
 
 
+def test_collect_allure_results_replaces_stale_destination(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "new.json").write_text("new\n")
+    destination = tmp_path / "results" / "allure-result"
+    destination.mkdir(parents=True)
+    (destination / "stale.json").write_text("stale\n")
+
+    result = run_e2e_bash(
+        "collect_allure_results",
+        env={"LYNX_RAW_ALLURE_DIR": str(raw), "RESULT_DIR": str(tmp_path / "results")},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert sorted(path.name for path in destination.iterdir()) == ["new.json"]
+
+
+def test_collect_allure_results_rejects_symlink_destination(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "new.json").write_text("new\n")
+    protected = tmp_path / "protected"
+    protected.mkdir()
+    (protected / "keep").write_text("unchanged\n")
+    result_dir = tmp_path / "results"
+    result_dir.mkdir()
+    (result_dir / "allure-result").symlink_to(protected)
+
+    result = run_e2e_bash(
+        "collect_allure_results",
+        env={"LYNX_RAW_ALLURE_DIR": str(raw), "RESULT_DIR": str(result_dir)},
+    )
+
+    assert result.returncode != 0
+    assert (protected / "keep").read_text() == "unchanged\n"
+    assert not (protected / "new.json").exists()
+
+
+def test_collect_allure_results_copy_failure_keeps_old_results_and_cleans_stage(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "new.json").write_text("new\n")
+    result_dir = tmp_path / "results"
+    destination = result_dir / "allure-result"
+    destination.mkdir(parents=True)
+    (destination / "old.json").write_text("old\n")
+    fake_cp = tmp_path / "cp"
+    fake_cp.write_text(
+        "#!/usr/bin/env bash\n"
+        'destination=${!#}\nmkdir -p "$destination"\nprintf partial > "$destination/partial"\nexit 74\n'
+    )
+    fake_cp.chmod(0o755)
+
+    result = run_e2e_bash(
+        "collect_allure_results",
+        env={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "LYNX_RAW_ALLURE_DIR": str(raw),
+            "RESULT_DIR": str(result_dir),
+        },
+    )
+
+    assert result.returncode != 0
+    assert sorted(path.name for path in destination.iterdir()) == ["old.json"]
+    assert not list(result_dir.glob(".allure-result.tmp.*"))
+
+
 def test_collect_allure_results_fails_when_raw_results_are_empty(tmp_path):
     raw = tmp_path / "allure-results"
     raw.mkdir()
@@ -941,6 +1008,68 @@ def test_generate_allure_report_is_attempted_for_nonempty_results(tmp_path):
     )
 
 
+@pytest.mark.parametrize("test_exit", [0, 37])
+def test_run_e2e_raw_copy_failure_is_not_masked_and_preserves_test_failure(tmp_path, test_exit):
+    testing_dir = tmp_path / "testing"
+    testing_dir.mkdir()
+    nexus = testing_dir / "nexus.test"
+    nexus.write_text(
+        "#!/usr/bin/env bash\nmkdir -p allure-results\nprintf result > allure-results/result.json\n"
+        f"exit {test_exit}\n"
+    )
+    nexus.chmod(0o555)
+    testing_dir.chmod(0o555)
+    config = tmp_path / "config.yaml"
+    config.write_text("{}\n")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_cp = fake_bin / "cp"
+    fake_cp.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$*" == *allure-results* ]]; then exit 74; fi\nexec /bin/cp "$@"\n'
+    )
+    fake_cp.chmod(0o755)
+
+    result = run_e2e_bash(
+        "run_e2e",
+        env={
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "LYNX_TESTING_DIR": str(testing_dir),
+            "LYNX_BDD_CONFIG": str(config),
+            "RESULT_DIR": str(tmp_path / "results"),
+        },
+    )
+
+    assert result.returncode == (test_exit or 1)
+    assert not list((tmp_path / "results").glob(".lynx-raw-allure.*"))
+
+
+def test_collect_allure_results_cleans_temporary_raw_copy(tmp_path):
+    testing_dir = tmp_path / "testing"
+    testing_dir.mkdir()
+    nexus = testing_dir / "nexus.test"
+    nexus.write_text(
+        "#!/usr/bin/env bash\nmkdir -p allure-results\nprintf result > allure-results/result.json\n"
+    )
+    nexus.chmod(0o555)
+    testing_dir.chmod(0o555)
+    config = tmp_path / "config.yaml"
+    config.write_text("{}\n")
+    raw_path = tmp_path / "raw-path"
+
+    result = run_e2e_bash(
+        f'run_e2e && printf %s "$LYNX_RAW_ALLURE_DIR" > "{raw_path}" && collect_allure_results',
+        env={
+            "LYNX_TESTING_DIR": str(testing_dir),
+            "LYNX_BDD_CONFIG": str(config),
+            "RESULT_DIR": str(tmp_path / "results"),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not Path(raw_path.read_text()).exists()
+
+
 def test_collect_diagnostics_queries_only_bounded_status_resources(tmp_path):
     calls = tmp_path / "kubectl.calls"
     write_fake_kubectl(
@@ -949,6 +1078,10 @@ def test_collect_diagnostics_queries_only_bounded_status_resources(tmp_path):
 printf '%s\n' 'status output containing token diagnostic-secret-token'
 printf '%s\n' 'endpoint https://diagnostic-user:diagnostic-password@example.test/repository'
 printf '%s\n' 'credential diagnostic-generic-credential'
+printf '%s\n' 'TOKEN=DIAGNOSTIC-UPPER-TOKEN'
+printf '%s\n' 'token="diagnostic quoted token"'
+printf '%s\n' 'Authorization: Bearer diagnostic-bearer remainder-secret'
+printf '%s\n' 'stderr diagnostic-stderr-secret' >&2
 ''',
     )
     result_dir = tmp_path / "results"
@@ -980,3 +1113,25 @@ printf '%s\n' 'credential diagnostic-generic-credential'
     assert "diagnostic-user" not in diagnostic
     assert "diagnostic-password" not in diagnostic
     assert "diagnostic-generic-credential" not in diagnostic
+    assert "DIAGNOSTIC-UPPER-TOKEN" not in diagnostic
+    assert "diagnostic quoted token" not in diagnostic
+    assert "diagnostic-bearer" not in diagnostic
+    assert "remainder-secret" not in diagnostic
+    assert "diagnostic-stderr-secret" not in diagnostic
+
+
+def test_collect_diagnostics_rejects_symlink_log_destination(tmp_path):
+    protected = tmp_path / "protected.log"
+    protected.write_text("unchanged\n")
+    result_dir = tmp_path / "results"
+    result_dir.mkdir()
+    (result_dir / "diagnostics.log").symlink_to(protected)
+
+    result = run_diagnostics_bash(
+        "collect_diagnostics",
+        env={"RESULT_DIR": str(result_dir)},
+    )
+
+    assert result.returncode != 0
+    assert protected.read_text() == "unchanged\n"
+    assert not list(result_dir.glob(".diagnostics.tmp.*"))

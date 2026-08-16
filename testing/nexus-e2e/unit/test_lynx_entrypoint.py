@@ -15,6 +15,7 @@ E2E = Path(__file__).parents[2] / "lynx" / "e2e.sh"
 DIAGNOSTICS = Path(__file__).parents[2] / "lynx" / "diagnostics.sh"
 ENTRYPOINT = Path(__file__).parents[2] / "lynx-entrypoint.sh"
 CONTAINERFILE = Path(__file__).parents[2] / "Containerfile"
+HOTFIX_CONTAINERFILE = Path(__file__).parents[2] / "Containerfile.lynx-hotfix"
 INTEGRATION_PIPELINE = Path(__file__).parents[3] / ".tekton" / "integration-test.yaml"
 TIMESTAMP = r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]"
 
@@ -1336,6 +1337,17 @@ def test_containerfile_installs_fixed_executable_entrypoint_and_libraries_explic
     assert "ENV GOPROXY='https://goproxy.cn,direct'" in text
     assert "set -x" not in entrypoint
     assert not re.search(r"run_e2e\s*\|\|\s*true", entrypoint)
+
+
+def test_hotfix_containerfile_only_replaces_lynx_runtime():
+    text = HOTFIX_CONTAINERFILE.read_text()
+
+    assert text.startswith("FROM build-harbor.alauda.cn/devops/nexus-ce-test:")
+    assert "COPY testing/lynx /app/lynx" in text
+    assert "COPY testing/lynx-entrypoint.sh /app/lynx-entrypoint.sh" in text
+    assert 'ENTRYPOINT ["/app/lynx-entrypoint.sh"]' in text
+    assert "go test" not in text
+    assert "prepare-maven-e2e-bundle" not in text
 
 
 def test_integration_pipeline_supplies_complete_test_image_build_context():

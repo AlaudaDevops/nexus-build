@@ -1,0 +1,10 @@
+FROM build-harbor.alauda.cn/devops/nexus-ce-test:v0.1.1-rchotfix.6.31.g1431efc-x-devops-44609-lynx-entrypoint
+
+COPY testing/lynx /app/lynx
+COPY testing/lynx-entrypoint.sh /app/lynx-entrypoint.sh
+
+RUN chmod 755 /app/lynx-entrypoint.sh \
+    && find /app/lynx -type f -name '*.sh' -exec chmod 644 {} + \
+    && test -x /app/lynx-entrypoint.sh
+
+ENTRYPOINT ["/app/lynx-entrypoint.sh"]

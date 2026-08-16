@@ -32,18 +32,18 @@ spec:
     - name: image-repository
       value: build-harbor.alauda.cn/devops/nexus-ce-test
     - name: containerfile-path
-      value: testing/Containerfile
+      value: testing/Containerfile.lynx-hotfix
     - name: context
       value: "."
     - name: tags
       value:
-        - v0.1.1-rchotfix.6.31.g1431efc-x-devops-44609-lynx-entrypoint-idc.7-public-go
+        - v0.1.1-rchotfix.6.31.g1431efc-x-devops-44609-lynx-entrypoint-idc.8-hotfix-layer
     - name: ignore-trivy-scan
       value: "true"
     - name: file-list-for-commit-sha
       value:
         - .tekton/build-lynx-test-image.yaml
-        - testing/Containerfile
+        - testing/Containerfile.lynx-hotfix
         - testing/lynx-entrypoint.sh
         - testing/lynx
 

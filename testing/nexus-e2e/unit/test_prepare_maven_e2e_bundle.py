@@ -338,7 +338,7 @@ def test_containerfile_builds_maven_bundle_in_an_isolated_stage():
     bundle_stage = "\n".join(dockerfile_stage("maven-bundle"))
     final_stage = "\n".join(dockerfile_stage("test-image"))
 
-    assert "FROM registry-dev.alauda.io/platform-edge/python:3.12-slim AS test-base" in instructions
+    assert "FROM registry.alauda.cn:60070/devops/nexus-ce-test-base:latest AS test-base" in instructions
     assert "ARG MAVEN_BUNDLE_MIRROR_URL=https://artifacts.alauda.io/repository/maven-central" in bundle_stage
     assert "MAVEN_BUNDLE_MIRROR_URL=$MAVEN_BUNDLE_MIRROR_URL" in bundle_stage
     assert "PATH=/tools/bin/maven/bin:$PATH" in bundle_stage

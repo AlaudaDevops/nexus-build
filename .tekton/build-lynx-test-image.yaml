@@ -37,7 +37,7 @@ spec:
       value: "."
     - name: tags
       value:
-        - v0.1.1-rchotfix.6.31.g1431efc-x-devops-44609-lynx-entrypoint
+        - v0.1.1-rchotfix.6.31.g1431efc-x-devops-44609-lynx-entrypoint-idc.2
     - name: ignore-trivy-scan
       value: "true"
     - name: file-list-for-commit-sha

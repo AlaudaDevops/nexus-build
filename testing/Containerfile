@@ -4,7 +4,7 @@ WORKDIR /tools
 RUN mkdir -p /tools/bin
 COPY testing /app
 # 安装 playwright
-ENV GOPROXY='https://gomod.alauda.io,direct'
+ENV GOPROXY='https://goproxy.cn,direct'
 RUN set -eux; \
     cd /app && \
     CGO_ENABLED=0 go test -c -o /tools/bin/nexus.test ./

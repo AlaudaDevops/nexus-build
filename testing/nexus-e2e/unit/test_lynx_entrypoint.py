@@ -1333,6 +1333,7 @@ def test_containerfile_installs_fixed_executable_entrypoint_and_libraries_explic
     assert "test -x /app/lynx-entrypoint.sh" in text
     assert "ENTRYPOINT [\"/app/lynx-entrypoint.sh\"]" in text
     assert "ln -sfn /opt/allure-${ALLURE_VERSION}/bin/allure /usr/local/bin/allure" in text
+    assert "ENV GOPROXY='https://goproxy.cn,direct'" in text
     assert "set -x" not in entrypoint
     assert not re.search(r"run_e2e\s*\|\|\s*true", entrypoint)
 

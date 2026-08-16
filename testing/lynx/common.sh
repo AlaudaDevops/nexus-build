@@ -52,24 +52,37 @@ listed_operator_version() {
 wait_for_value() {
   local description=$1
   local expected=$2
-  local timeout=$3
+  local timeout_seconds=$3
   shift 3
 
-  local poll_interval=${LYNX_POLL_INTERVAL:-5}
-  local heartbeat_interval=${LYNX_WAIT_HEARTBEAT:-30}
-  local started_at now next_heartbeat current
-  started_at=$(date +%s)
+  local poll_interval=${LYNX_POLL_INTERVAL-5}
+  local heartbeat_interval=${LYNX_WAIT_HEARTBEAT-30}
+  require_positive_integer LYNX_POLL_INTERVAL "$poll_interval"
+  require_positive_integer LYNX_WAIT_HEARTBEAT "$heartbeat_interval"
+  require_positive_integer timeout "$timeout_seconds"
+  require_command timeout
+
+  local started_at=$SECONDS
+  local now next_heartbeat current remaining sleep_for
   next_heartbeat=$started_at
 
   while :; do
-    current=$("$@" 2>/dev/null) || current=
+    now=$SECONDS
+    remaining=$((timeout_seconds - (now - started_at)))
+    if ((remaining <= 0)); then
+      log "Timed out after ${timeout_seconds}s waiting for ${description}"
+      return 1
+    fi
+
+    current=$(timeout "${remaining}s" "$@" 2>/dev/null) || current=
     if [[ $current == "$expected" ]]; then
       return 0
     fi
 
-    now=$(date +%s)
-    if ((now - started_at >= timeout)); then
-      log "Timed out after ${timeout}s waiting for ${description}"
+    now=$SECONDS
+    remaining=$((timeout_seconds - (now - started_at)))
+    if ((remaining <= 0)); then
+      log "Timed out after ${timeout_seconds}s waiting for ${description}"
       return 1
     fi
 
@@ -77,6 +90,10 @@ wait_for_value() {
       log "Waiting for ${description} (${now-started_at}s elapsed)"
       next_heartbeat=$((now + heartbeat_interval))
     fi
-    sleep "$poll_interval"
+    sleep_for=$poll_interval
+    if ((sleep_for > remaining)); then
+      sleep_for=$remaining
+    fi
+    sleep "$sleep_for"
   done
 }

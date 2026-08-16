@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ COMMON = Path(__file__).parents[2] / "lynx" / "common.sh"
 TIMESTAMP = r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]"
 
 
-def run_bash(script, *, env=None):
+def run_bash(script, *, env=None, timeout=5):
     command_env = os.environ.copy()
     command_env["LC_ALL"] = "C"
     if env:
@@ -21,6 +22,7 @@ def run_bash(script, *, env=None):
         text=True,
         capture_output=True,
         env=command_env,
+        timeout=timeout,
     )
 
 
@@ -32,16 +34,15 @@ def test_log_and_fatal_write_timestamped_messages_to_stderr():
     assert result.stdout == ""
 
 
-def test_require_env_rejects_unset_and_empty_values_without_disclosing_values():
-    secret = "should-never-be-printed"
+@pytest.mark.parametrize("state", ["unset", "empty"])
+def test_require_env_rejects_unset_and_empty_values(state):
+    setup = "unset LYNX_TEST_SECRET" if state == "unset" else "export LYNX_TEST_SECRET="
     result = run_bash(
-        'require_env LYNX_TEST_SECRET',
-        env={"LYNX_TEST_SECRET": ""},
+        f'{setup}\nrequire_env LYNX_TEST_SECRET',
     )
 
     assert result.returncode != 0
     assert "LYNX_TEST_SECRET" in result.stderr
-    assert secret not in result.stderr
 
 
 def test_require_env_accepts_a_nonempty_value_without_printing_it():
@@ -53,6 +54,11 @@ def test_require_env_accepts_a_nonempty_value_without_printing_it():
 
     assert result.returncode == 0
     assert secret not in result.stdout + result.stderr
+
+
+def test_run_bash_bounds_test_processes():
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_bash("sleep 0.2", timeout=0.01)
 
 
 def test_require_command_accepts_present_command_and_rejects_missing_command():
@@ -109,14 +115,18 @@ def test_listed_operator_version_fails_safely_for_invalid_or_missing_listing(plu
 
 def test_wait_for_value_returns_when_command_output_exactly_matches(tmp_path):
     attempts = tmp_path / "attempts"
+    probe = tmp_path / "probe"
+    probe.write_text(
+        f'''#!/usr/bin/env bash
+count=$(wc -l < "{attempts}" 2>/dev/null || printf 0)
+printf 'x\\n' >> "{attempts}"
+if (( count >= 1 )); then printf 'ready\\n'; else printf 'not-ready\\n'; fi
+'''
+    )
+    probe.chmod(0o755)
     result = run_bash(
-        f'''probe() {{
-          count=$(wc -l < "{attempts}" 2>/dev/null || printf 0)
-          printf 'x\\n' >> "{attempts}"
-          if (( count >= 1 )); then printf 'ready\\n'; else printf 'not-ready\\n'; fi
-        }}
-        wait_for_value "operator readiness" ready 2 probe''',
-        env={"LYNX_POLL_INTERVAL": "0.01", "LYNX_WAIT_HEARTBEAT": "1"},
+        f'wait_for_value "operator readiness" ready 3 "{probe}"',
+        env={"LYNX_POLL_INTERVAL": "1", "LYNX_WAIT_HEARTBEAT": "1"},
     )
 
     assert result.returncode == 0, result.stderr
@@ -127,9 +137,9 @@ def test_wait_for_value_returns_when_command_output_exactly_matches(tmp_path):
 def test_wait_for_value_is_bounded_and_heartbeats_without_command_output():
     secret_output = "sensitive-current-value"
     result = run_bash(
-        f'''probe() {{ printf '%s\\n' {json.dumps(secret_output)}; }}
-        wait_for_value "operator readiness" ready 1 probe''',
-        env={"LYNX_POLL_INTERVAL": "0.05", "LYNX_WAIT_HEARTBEAT": "1"},
+        f'''wait_for_value "operator readiness" ready 1 \
+          bash -c "printf '%s\\n' {secret_output}"''',
+        env={"LYNX_POLL_INTERVAL": "1", "LYNX_WAIT_HEARTBEAT": "1"},
     )
 
     assert result.returncode == 1
@@ -137,3 +147,43 @@ def test_wait_for_value_is_bounded_and_heartbeats_without_command_output():
     assert "waiting" in result.stderr.lower()
     assert "timed out" in result.stderr.lower()
     assert secret_output not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("name", ["LYNX_POLL_INTERVAL", "LYNX_WAIT_HEARTBEAT"])
+@pytest.mark.parametrize("value", ["", "0", "-1", "1.5", "abc"])
+def test_wait_for_value_rejects_invalid_timing_settings(name, value):
+    result = run_bash(
+        'wait_for_value "operator readiness" ready 1 printf ready',
+        env={name: value},
+    )
+
+    assert result.returncode != 0
+    assert name in result.stderr
+
+
+@pytest.mark.parametrize("name", ["LYNX_POLL_INTERVAL", "LYNX_WAIT_HEARTBEAT"])
+def test_wait_for_value_does_not_evaluate_malicious_timing_settings(tmp_path, name):
+    sentinel = tmp_path / "arithmetic-was-evaluated"
+    malicious = f'1+$(touch "{sentinel}")'
+    result = run_bash(
+        'wait_for_value "operator readiness" ready 1 printf ready',
+        env={name: malicious},
+    )
+
+    assert result.returncode != 0
+    assert name in result.stderr
+    assert not sentinel.exists()
+    assert malicious not in result.stdout + result.stderr
+
+
+def test_wait_for_value_times_out_a_hanging_probe():
+    started_at = time.monotonic()
+    result = run_bash(
+        'wait_for_value "hanging probe" ready 1 bash -c "sleep 10; printf ready"',
+        env={"LYNX_POLL_INTERVAL": "1", "LYNX_WAIT_HEARTBEAT": "1"},
+        timeout=3,
+    )
+
+    assert result.returncode == 1
+    assert time.monotonic() - started_at < 3
+    assert "timed out" in result.stderr.lower()

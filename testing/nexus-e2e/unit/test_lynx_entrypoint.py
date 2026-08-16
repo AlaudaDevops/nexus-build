@@ -355,3 +355,38 @@ def test_write_bdd_config_uses_acp_target_and_mode_0600(tmp_path):
     }
     assert config_path.stat().st_mode & 0o777 == 0o600
     assert token not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    ("function_name", "filename"),
+    [("write_proxy_kubeconfig", "proxy.kubeconfig"), ("write_bdd_config", "config.yaml")],
+)
+@pytest.mark.parametrize("failed_command", ["chmod", "mv"])
+def test_secret_config_writers_clean_temporary_files_on_command_failure(
+    tmp_path, function_name, filename, failed_command
+):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for command in ("chmod", "mv"):
+        fake_command = fake_bin / command
+        if command == failed_command:
+            fake_command.write_text("#!/usr/bin/env bash\nexit 73\n")
+        else:
+            fake_command.write_text(f'#!/usr/bin/env bash\nexec /bin/{command} "$@"\n')
+        fake_command.chmod(0o755)
+    destination = tmp_path / filename
+    token = "cleanup-secret-token"
+
+    result = run_auth_bash(
+        f'{function_name} "{destination}" "$TOKEN"',
+        env={
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "API_URL": "https://acp.example.test/",
+            "REGION_NAME": "region-one",
+            "TOKEN": token,
+        },
+    )
+
+    assert result.returncode != 0
+    assert not list(tmp_path.glob(f"{filename}.tmp.*"))
+    assert token not in result.stdout + result.stderr

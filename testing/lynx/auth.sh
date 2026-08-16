@@ -107,7 +107,6 @@ write_proxy_kubeconfig() {
   require_env REGION_NAME
   require_command jq
   umask 077
-  trap 'rm -f -- "$temporary"' RETURN
   jq -n --arg server "$api_url/kubernetes/$REGION_NAME" --arg token "$token" '
     {
       apiVersion: "v1",
@@ -117,10 +116,18 @@ write_proxy_kubeconfig() {
       contexts: [{name: "target", context: {cluster: "target", user: "target"}}],
       "current-context": "target"
     }
-  ' >"$temporary" || fatal "could not write proxy kubeconfig"
-  chmod 0600 "$temporary" || fatal "could not protect proxy kubeconfig"
-  mv -f -- "$temporary" "$destination" || fatal "could not install proxy kubeconfig"
-  trap - RETURN
+  ' >"$temporary" || {
+    rm -f -- "$temporary"
+    fatal "could not write proxy kubeconfig"
+  }
+  chmod 0600 "$temporary" || {
+    rm -f -- "$temporary"
+    fatal "could not protect proxy kubeconfig"
+  }
+  mv -f -- "$temporary" "$destination" || {
+    rm -f -- "$temporary"
+    fatal "could not install proxy kubeconfig"
+  }
 }
 
 write_bdd_config() {
@@ -134,11 +141,18 @@ write_bdd_config() {
   require_env REGION_NAME
   require_command jq
   umask 077
-  trap 'rm -f -- "$temporary"' RETURN
   jq -n --arg base_url "$api_url" --arg token "$token" --arg cluster "$REGION_NAME" '
     {acp: {baseUrl: $base_url, token: $token, cluster: $cluster}}
-  ' >"$temporary" || fatal "could not write BDD configuration"
-  chmod 0600 "$temporary" || fatal "could not protect BDD configuration"
-  mv -f -- "$temporary" "$destination" || fatal "could not install BDD configuration"
-  trap - RETURN
+  ' >"$temporary" || {
+    rm -f -- "$temporary"
+    fatal "could not write BDD configuration"
+  }
+  chmod 0600 "$temporary" || {
+    rm -f -- "$temporary"
+    fatal "could not protect BDD configuration"
+  }
+  mv -f -- "$temporary" "$destination" || {
+    rm -f -- "$temporary"
+    fatal "could not install BDD configuration"
+  }
 }

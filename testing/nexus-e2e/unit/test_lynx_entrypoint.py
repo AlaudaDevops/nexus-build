@@ -11,6 +11,8 @@ import pytest
 COMMON = Path(__file__).parents[2] / "lynx" / "common.sh"
 AUTH = Path(__file__).parents[2] / "lynx" / "auth.sh"
 OLM = Path(__file__).parents[2] / "lynx" / "olm.sh"
+E2E = Path(__file__).parents[2] / "lynx" / "e2e.sh"
+DIAGNOSTICS = Path(__file__).parents[2] / "lynx" / "diagnostics.sh"
 TIMESTAMP = r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]"
 
 
@@ -34,6 +36,14 @@ def run_auth_bash(script, *, env=None, timeout=5):
 
 def run_olm_bash(script, *, env=None, timeout=5):
     return run_bash(f'source "{OLM}"\n{script}', env=env, timeout=timeout)
+
+
+def run_e2e_bash(script, *, env=None, timeout=5):
+    return run_bash(f'source "{E2E}"\n{script}', env=env, timeout=timeout)
+
+
+def run_diagnostics_bash(script, *, env=None, timeout=5):
+    return run_bash(f'source "{DIAGNOSTICS}"\n{script}', env=env, timeout=timeout)
 
 
 def write_fake_kubectl(tmp_path, body):
@@ -811,3 +821,155 @@ def test_secret_config_writers_clean_temporary_files_when_signalled(
 
     assert result.returncode != 0
     assert not list(tmp_path.glob(f"{filename}.tmp.*"))
+
+
+def test_run_e2e_uses_godog_tags_config_and_preserves_test_exit(tmp_path):
+    testing_dir = tmp_path / "testing"
+    testing_dir.mkdir()
+    calls = tmp_path / "nexus.calls"
+    nexus = testing_dir / "nexus.test"
+    nexus.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf \'%s|%s|%s\\n\' "$PWD" "$E2E_CONFIG" "$*" > "$LYNX_TEST_CALLS"\n'
+        "exit 37\n"
+    )
+    nexus.chmod(0o755)
+    config = tmp_path / "config.yaml"
+    config.write_text("{}\n")
+
+    result = run_e2e_bash(
+        "run_e2e",
+        env={
+            "LYNX_TESTING_DIR": str(testing_dir),
+            "LYNX_BDD_CONFIG": str(config),
+            "LYNX_E2E_TAGS": "@e2e && ~@slow",
+            "LYNX_TEST_CALLS": str(calls),
+        },
+    )
+
+    assert result.returncode == 37
+    cwd, e2e_config, args = calls.read_text().strip().split("|", 2)
+    assert cwd == str(testing_dir)
+    assert e2e_config == str(config)
+    assert args == "--godog.tags=@e2e && ~@slow"
+
+
+def test_run_e2e_defaults_to_e2e_tag_and_uses_writable_copy(tmp_path):
+    testing_dir = tmp_path / "read-only-testing"
+    testing_dir.mkdir()
+    calls = tmp_path / "nexus.calls"
+    nexus = testing_dir / "nexus.test"
+    nexus.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf \'%s|%s\\n\' "$PWD" "$*" > "$LYNX_TEST_CALLS"\n'
+    )
+    nexus.chmod(0o555)
+    testing_dir.chmod(0o555)
+    config = tmp_path / "config.yaml"
+    config.write_text("{}\n")
+
+    result = run_e2e_bash(
+        "run_e2e",
+        env={
+            "LYNX_TESTING_DIR": str(testing_dir),
+            "LYNX_BDD_CONFIG": str(config),
+            "LYNX_TEST_CALLS": str(calls),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    cwd, args = calls.read_text().strip().split("|", 1)
+    assert cwd != str(testing_dir)
+    assert args == "--godog.tags=@e2e"
+    assert Path(cwd).exists() is False
+
+
+def test_collect_allure_results_normalizes_raw_results(tmp_path):
+    raw = tmp_path / "raw" / "allure-results"
+    raw.mkdir(parents=True)
+    (raw / "one-result.json").write_text('{"status":"passed"}\n')
+    result_dir = tmp_path / "results"
+
+    result = run_e2e_bash(
+        "collect_allure_results",
+        env={"LYNX_RAW_ALLURE_DIR": str(raw), "RESULT_DIR": str(result_dir)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (result_dir / "allure-result" / "one-result.json").is_file()
+
+
+def test_collect_allure_results_fails_when_raw_results_are_empty(tmp_path):
+    raw = tmp_path / "allure-results"
+    raw.mkdir()
+
+    result = run_e2e_bash(
+        "collect_allure_results",
+        env={"LYNX_RAW_ALLURE_DIR": str(raw), "RESULT_DIR": str(tmp_path / "results")},
+    )
+
+    assert result.returncode != 0
+    assert "empty" in result.stderr.lower()
+
+
+def test_generate_allure_report_is_attempted_for_nonempty_results(tmp_path):
+    result_dir = tmp_path / "results"
+    raw = result_dir / "allure-result"
+    raw.mkdir(parents=True)
+    (raw / "one-result.json").write_text("{}\n")
+    calls = tmp_path / "allure.calls"
+    fake_allure = tmp_path / "allure"
+    fake_allure.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf \'%s\\n\' "$*" > "$LYNX_TEST_CALLS"\n'
+        "exit 29\n"
+    )
+    fake_allure.chmod(0o755)
+
+    result = run_e2e_bash(
+        "generate_allure_report",
+        env={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "RESULT_DIR": str(result_dir),
+            "LYNX_TEST_CALLS": str(calls),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text().strip() == (
+        f"generate {raw} --clean -o {result_dir / 'allure-report'}"
+    )
+
+
+def test_collect_diagnostics_queries_only_bounded_status_resources(tmp_path):
+    calls = tmp_path / "kubectl.calls"
+    write_fake_kubectl(
+        tmp_path,
+        '''printf '%s\n' "$*" >> "$LYNX_TEST_CALLS"
+printf '%s\n' 'status output containing token diagnostic-secret-token'
+''',
+    )
+    result_dir = tmp_path / "results"
+
+    result = run_diagnostics_bash(
+        "collect_diagnostics",
+        env={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "KUBECONFIG": str(tmp_path / "proxy.kubeconfig"),
+            "OPERATOR_NAMESPACE": "nexus-ce-operator",
+            "RESULT_DIR": str(result_dir),
+            "LYNX_DIAGNOSTICS_TIMEOUT": "2",
+            "LYNX_TEST_CALLS": str(calls),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    all_calls = calls.read_text().lower()
+    assert "--request-timeout=2s" in all_calls
+    assert any(resource in all_calls for resource in ("subscription", "clusterserviceversion"))
+    assert "deployment" in all_calls
+    assert "event" in all_calls
+    assert "secret" not in all_calls
+    assert "configmap" not in all_calls
+    diagnostic = (result_dir / "diagnostics.log").read_text()
+    assert "diagnostic-secret-token" not in diagnostic

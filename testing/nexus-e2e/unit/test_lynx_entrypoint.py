@@ -87,6 +87,23 @@ JSON
     assert result.stdout == "nexus-ce-operator.v4.2.1|nexus-catalog|olm\n"
 
 
+def test_resolve_operator_catalog_accepts_release_version_from_lynx(tmp_path):
+    write_fake_kubectl(
+        tmp_path,
+        '''cat <<'JSON'
+{"items":[{"metadata":{"name":"nexus-ce-operator"},"status":{"catalogSource":"catalog","catalogSourceNamespace":"olm","channels":[{"name":"stable","currentCSV":"nexus-ce-operator.v3.76.12"}]}}]}
+JSON
+''',
+    )
+    result = run_olm_bash(
+        'resolve_operator_catalog; printf "%s\\n" "$OPERATOR_CSV"',
+        env=olm_env(tmp_path, L5_PLUGINS_VERSION='{"nexus-ce-operator":"3.76.12"}'),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "nexus-ce-operator.v3.76.12\n"
+
+
 def test_resolve_operator_catalog_rejects_channel_version_mismatch(tmp_path):
     write_fake_kubectl(
         tmp_path,

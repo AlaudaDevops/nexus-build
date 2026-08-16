@@ -92,7 +92,11 @@ resolve_operator_catalog() {
       return 1
     }
   IFS=$'\t' read -r OPERATOR_CSV CATALOG_SOURCE CATALOG_NAMESPACE <<<"$resolved"
-  if [[ $OPERATOR_CSV != "$expected" ]]; then
+  # Lynx currently injects the release version (for example, 3.76.12), while
+  # OLM exposes the full CSV name (for example,
+  # nexus-ce-operator.v3.76.12).  Also accept a full CSV value for backwards
+  # compatibility, but never accept a different listed version.
+  if [[ $OPERATOR_CSV != "$expected" && $OPERATOR_CSV != *.v"$expected" ]]; then
     log "ERROR: selected channel CSV does not match the listed operator version"
     return 1
   fi

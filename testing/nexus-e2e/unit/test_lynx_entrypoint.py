@@ -231,6 +231,35 @@ install_operator
     assert marker.read_text() == "deploymentcrd"
 
 
+def test_olm_wait_value_bounds_hung_probe_and_emits_heartbeat():
+    started_at = time.monotonic()
+    result = run_olm_bash(
+        '_hung_olm_probe() { sleep 10; printf ready; }; _olm_wait_value "hung OLM probe" ready 1 _hung_olm_probe',
+        env={"LYNX_POLL_INTERVAL": "1", "LYNX_WAIT_HEARTBEAT": "1"},
+        timeout=3,
+    )
+
+    assert result.returncode != 0
+    assert time.monotonic() - started_at < 3
+    assert "waiting" in result.stderr.lower()
+    assert "timed out" in result.stderr.lower()
+
+
+def test_wait_for_install_plan_bounds_hung_kubectl_and_emits_heartbeat(tmp_path):
+    write_fake_kubectl(tmp_path, "sleep 10\n")
+    started_at = time.monotonic()
+    result = run_olm_bash(
+        "wait_for_install_plan",
+        env=olm_env(tmp_path, LYNX_INSTALL_TIMEOUT="1"),
+        timeout=3,
+    )
+
+    assert result.returncode != 0
+    assert time.monotonic() - started_at < 3
+    assert "waiting" in result.stderr.lower()
+    assert "timed out" in result.stderr.lower()
+
+
 def test_log_and_fatal_write_timestamped_messages_to_stderr():
     result = run_bash('log "starting"; (fatal "stopped")')
 

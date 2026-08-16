@@ -9,6 +9,7 @@ OPERATOR_PACKAGE=${OPERATOR_PACKAGE:-nexus-ce-operator}
 OPERATOR_NAMESPACE=${OPERATOR_NAMESPACE:-nexus-ce-operator}
 OPERATOR_CHANNEL=${OPERATOR_CHANNEL:-stable}
 INSTALL_TIMEOUT=${INSTALL_TIMEOUT:-${LYNX_INSTALL_TIMEOUT:-900}}
+export OPERATOR_PACKAGE OPERATOR_NAMESPACE OPERATOR_CHANNEL INSTALL_TIMEOUT
 
 _olm_timeout() {
   require_positive_integer INSTALL_TIMEOUT "$INSTALL_TIMEOUT"
@@ -18,16 +19,39 @@ _olm_timeout() {
 _olm_wait_value() {
   local description=$1 expected=$2 timeout_seconds=$3
   shift 3
-  local started=$SECONDS current remaining poll_interval=${LYNX_POLL_INTERVAL:-5}
+  local started=$SECONDS current remaining sleep_for
+  local poll_interval=${LYNX_POLL_INTERVAL:-5}
+  local heartbeat_interval=${LYNX_WAIT_HEARTBEAT:-30}
+  local next_heartbeat=$SECONDS
   require_positive_integer LYNX_POLL_INTERVAL "$poll_interval"
+  require_positive_integer LYNX_WAIT_HEARTBEAT "$heartbeat_interval"
+  require_positive_integer timeout "$timeout_seconds"
+  require_command timeout
   poll_interval=$((10#$poll_interval))
+  heartbeat_interval=$((10#$heartbeat_interval))
+  timeout_seconds=$((10#$timeout_seconds))
   while :; do
-    current=$("$@") || current=
+    remaining=$((timeout_seconds - (SECONDS - started)))
+    ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for ${description}"; return 1; }
+    current=$(_olm_timed_probe "$remaining" "$@") || current=
     [[ $current == "$expected" ]] && return 0
     remaining=$((timeout_seconds - (SECONDS - started)))
     ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for ${description}"; return 1; }
-    ((poll_interval < remaining)) && sleep "$poll_interval" || sleep "$remaining"
+    if ((SECONDS >= next_heartbeat)); then
+      log "Waiting for ${description} (${SECONDS-started}s elapsed)"
+      next_heartbeat=$((SECONDS + heartbeat_interval))
+    fi
+    sleep_for=$poll_interval
+    ((sleep_for > remaining)) && sleep_for=$remaining
+    sleep "$sleep_for"
   done
+}
+
+_olm_timed_probe() {
+  local remaining=$1 probe=$2
+  shift 2
+  export -f "$probe"
+  timeout "${remaining}s" bash -c '"$@"' bash "$probe" "$@"
 }
 
 resolve_operator_catalog() {
@@ -146,31 +170,55 @@ _subscription_state() {
 }
 
 wait_for_install_plan() {
-  local timeout_seconds started state install_plan phase remaining
+  local timeout_seconds started state install_plan phase remaining sleep_for
+  local poll_interval=${LYNX_POLL_INTERVAL:-5}
+  local heartbeat_interval=${LYNX_WAIT_HEARTBEAT:-30}
+  local next_heartbeat=$SECONDS
   timeout_seconds=$(_olm_timeout) || return 1
+  require_positive_integer LYNX_POLL_INTERVAL "$poll_interval"
+  require_positive_integer LYNX_WAIT_HEARTBEAT "$heartbeat_interval"
+  require_command timeout
+  poll_interval=$((10#$poll_interval))
+  heartbeat_interval=$((10#$heartbeat_interval))
   started=$SECONDS
   while :; do
-    state=$(_subscription_state) || return 1
+    remaining=$((timeout_seconds - (SECONDS - started)))
+    ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan reference"; return 1; }
+    state=$(_olm_timed_probe "$remaining" _subscription_state) || state=waiting
     case $state in
       terminal:*) log "ERROR: Subscription reported ${state#terminal:}"; return 1 ;;
       ready:*) install_plan=${state#ready:}; break ;;
     esac
     remaining=$((timeout_seconds - (SECONDS - started)))
     ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan reference"; return 1; }
-    sleep "${LYNX_POLL_INTERVAL:-5}"
+    if ((SECONDS >= next_heartbeat)); then
+      log "Waiting for InstallPlan reference (${SECONDS-started}s elapsed)"
+      next_heartbeat=$((SECONDS + heartbeat_interval))
+    fi
+    sleep_for=$poll_interval
+    ((sleep_for > remaining)) && sleep_for=$remaining
+    sleep "$sleep_for"
   done
   kubectl patch installplan "$install_plan" -n "$OPERATOR_NAMESPACE" \
     --type merge -p '{"spec":{"approved":true}}' >/dev/null || return 1
   while :; do
-    state=$(_subscription_state) || return 1
+    remaining=$((timeout_seconds - (SECONDS - started)))
+    ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan completion"; return 1; }
+    state=$(_olm_timed_probe "$remaining" _subscription_state) || state=waiting
     case $state in terminal:*) log "ERROR: Subscription reported ${state#terminal:}"; return 1 ;; esac
-    phase=$(kubectl get installplan "$install_plan" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
+    phase=$(timeout "${remaining}s" kubectl get installplan "$install_plan" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
       jq -r '.status.phase // ""')
     [[ $phase == Complete ]] && return 0
     [[ $phase == Failed ]] && { log "ERROR: InstallPlan failed"; return 1; }
     remaining=$((timeout_seconds - (SECONDS - started)))
     ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s waiting for InstallPlan completion"; return 1; }
-    sleep "${LYNX_POLL_INTERVAL:-5}"
+    if ((SECONDS >= next_heartbeat)); then
+      log "Waiting for InstallPlan completion (${SECONDS-started}s elapsed)"
+      next_heartbeat=$((SECONDS + heartbeat_interval))
+    fi
+    sleep_for=$poll_interval
+    ((sleep_for > remaining)) && sleep_for=$remaining
+    sleep "$sleep_for"
   done
 }
 
@@ -194,6 +242,7 @@ wait_for_deployment() {
     return 1
   }
   deployment=$(printf '%s' "$csv" | jq -r '.spec.install.spec.deployments[0].name') || return 1
+  export deployment
   _deployment_available() {
     kubectl get deployment "$deployment" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
       jq -r 'any(.status.conditions[]?; .type == "Available" and .status == "True")'

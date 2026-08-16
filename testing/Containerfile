@@ -81,7 +81,7 @@ RUN wget https://github.com/allure-framework/allure2/releases/download/${ALLURE_
 # ---- Maven E2E dependency bundle ----
 FROM test-base AS maven-bundle
 
-ARG MAVEN_BUNDLE_MIRROR_URL=https://artifacts.alauda.io/repository/maven-central
+ARG MAVEN_BUNDLE_MIRROR_URL=https://repo.maven.apache.org/maven2
 COPY testing/nexus-e2e/test_projects/maven /tmp/nexus-e2e-maven
 COPY testing/hack/prepare-maven-e2e-bundle.sh /usr/local/bin/prepare-maven-e2e-bundle
 RUN chmod 755 /usr/local/bin/prepare-maven-e2e-bundle && \

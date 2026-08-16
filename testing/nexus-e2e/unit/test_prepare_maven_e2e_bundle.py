@@ -339,7 +339,7 @@ def test_containerfile_builds_maven_bundle_in_an_isolated_stage():
     final_stage = "\n".join(dockerfile_stage("test-image"))
 
     assert "FROM registry.alauda.cn:60070/devops/nexus-ce-test-base:latest AS test-base" in instructions
-    assert "ARG MAVEN_BUNDLE_MIRROR_URL=https://artifacts.alauda.io/repository/maven-central" in bundle_stage
+    assert "ARG MAVEN_BUNDLE_MIRROR_URL=https://repo.maven.apache.org/maven2" in bundle_stage
     assert "MAVEN_BUNDLE_MIRROR_URL=$MAVEN_BUNDLE_MIRROR_URL" in bundle_stage
     assert "PATH=/tools/bin/maven/bin:$PATH" in bundle_stage
     assert "testing/nexus-e2e/test_projects/maven" in bundle_stage

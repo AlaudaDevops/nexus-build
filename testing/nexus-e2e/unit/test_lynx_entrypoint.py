@@ -686,6 +686,7 @@ def test_write_proxy_kubeconfig_uses_region_proxy_and_mode_0600(tmp_path):
         env={
             "API_URL": "https://acp.example.test/",
             "REGION_NAME": "region-one",
+            "REGISTRY_CLUSTER": "registry.example.test",
             "TOKEN": token,
         },
     )
@@ -709,6 +710,7 @@ def test_write_bdd_config_uses_acp_target_and_mode_0600(tmp_path):
         env={
             "API_URL": "https://acp.example.test/",
             "REGION_NAME": "region-one",
+            "REGISTRY_CLUSTER": "registry.example.test",
             "TOKEN": token,
         },
     )
@@ -716,6 +718,7 @@ def test_write_bdd_config_uses_acp_target_and_mode_0600(tmp_path):
     assert result.returncode == 0, result.stderr
     config = json.loads(config_path.read_text())
     assert config == {
+        "registry": {"cluster": "registry.example.test"},
         "acp": {
             "baseUrl": "https://acp.example.test",
             "token": token,
@@ -724,6 +727,30 @@ def test_write_bdd_config_uses_acp_target_and_mode_0600(tmp_path):
     }
     assert config_path.stat().st_mode & 0o777 == 0o600
     assert token not in result.stdout + result.stderr
+
+
+def test_write_bdd_config_reads_builtin_registry_from_target_cluster(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    write_fake_kubectl(
+        tmp_path,
+        '''[[ "$*" == "get configmap global-info -n kube-public -o jsonpath={.data.registryAddress}" ]]
+printf registry.from.cluster
+''',
+    )
+    result = run_auth_bash(
+        f'write_bdd_config "{config_path}" "$TOKEN"',
+        env={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "API_URL": "https://acp.example.test",
+            "REGION_NAME": "region-one",
+            "TOKEN": "bdd-secret-token",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(config_path.read_text())["registry"] == {
+        "cluster": "registry.from.cluster"
+    }
 
 
 @pytest.mark.parametrize(
@@ -786,9 +813,10 @@ def test_secret_config_writers_use_secure_destination_local_temporary_files(
         f'{function_name} "{destination}" "$TOKEN"',
         env={
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
-            "API_URL": "https://acp.example.test/",
-            "REGION_NAME": "region-one",
-            "TOKEN": "temporary-file-secret",
+                "API_URL": "https://acp.example.test/",
+                "REGION_NAME": "region-one",
+                "REGISTRY_CLUSTER": "registry.example.test",
+                "TOKEN": "temporary-file-secret",
             "LYNX_TEST_MKTEMP_CALLS": str(mktemp_calls),
         },
     )

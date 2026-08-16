@@ -166,7 +166,7 @@ write_bdd_config() (
   local destination=$1
   local token=$2
   local api_url=${API_URL%/}
-  local temporary=
+  local temporary= cluster_registry=${REGISTRY_CLUSTER:-}
 
   cleanup_bdd_config_temp() {
     [[ -z $temporary ]] || rm -f -- "$temporary"
@@ -176,11 +176,23 @@ write_bdd_config() (
   require_env API_URL
   require_env REGION_NAME
   require_command jq
+  if [[ -z $cluster_registry ]]; then
+    require_command kubectl
+    cluster_registry=$(kubectl get configmap global-info -n kube-public \
+      -o jsonpath='{.data.registryAddress}') \
+      || fatal "could not read the target cluster registry configuration"
+  fi
+  [[ -n $cluster_registry ]] \
+    || fatal "target cluster registry configuration is empty"
   umask 077
   temporary=$(mktemp "${destination}.tmp.XXXXXX") \
     || fatal "could not create BDD configuration temporary file"
-  jq -n --arg base_url "$api_url" --arg token "$token" --arg cluster "$REGION_NAME" '
-    {acp: {baseUrl: $base_url, token: $token, cluster: $cluster}}
+  jq -n --arg base_url "$api_url" --arg token "$token" \
+    --arg cluster "$REGION_NAME" --arg registry_cluster "$cluster_registry" '
+    {
+      registry: {cluster: $registry_cluster},
+      acp: {baseUrl: $base_url, token: $token, cluster: $cluster}
+    }
   ' >"$temporary" || fatal "could not write BDD configuration"
   chmod 0600 "$temporary" || fatal "could not protect BDD configuration"
   mv -f -- "$temporary" "$destination" || fatal "could not install BDD configuration"

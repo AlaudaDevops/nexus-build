@@ -2,8 +2,10 @@
 
 _mask_diagnostic_output() {
   sed -E \
+    -e 's#(https?://)[^/@[:space:]]+:[^/@[:space:]]+@#\1<redacted>@#g' \
     -e 's/([Tt]oken[[:space:]:=]+)[^[:space:]",]+/\1<redacted>/g' \
     -e 's/([Pp]assword[[:space:]:=]+)[^[:space:]",]+/\1<redacted>/g' \
+    -e 's/([Cc]redential(s)?[[:space:]:=]+)[^[:space:]",]+/\1<redacted>/g' \
     -e 's/([Aa]uthorization[[:space:]:=]+)[^[:space:]",]+/\1<redacted>/g'
 }
 
@@ -38,7 +40,7 @@ collect_diagnostics() {
   _diagnostic_query "Pods" get pods -n "$namespace" \
     -o 'custom-columns=NAME:.metadata.name,PHASE:.status.phase,REASON:.status.reason'
   _diagnostic_query "Events" get events -n "$namespace" --sort-by=.lastTimestamp \
-    -o 'custom-columns=LAST:.lastTimestamp,TYPE:.type,REASON:.reason,OBJECT:.involvedObject.name,MESSAGE:.message'
+    -o 'custom-columns=NAMESPACE:.metadata.namespace,LAST:.lastTimestamp,EVENT:.eventTime,COUNT:.count,TYPE:.type,REASON:.reason,KIND:.involvedObject.kind,OBJECT:.involvedObject.name'
 
   return 0
 }

@@ -947,6 +947,8 @@ def test_collect_diagnostics_queries_only_bounded_status_resources(tmp_path):
         tmp_path,
         '''printf '%s\n' "$*" >> "$LYNX_TEST_CALLS"
 printf '%s\n' 'status output containing token diagnostic-secret-token'
+printf '%s\n' 'endpoint https://diagnostic-user:diagnostic-password@example.test/repository'
+printf '%s\n' 'credential diagnostic-generic-credential'
 ''',
     )
     result_dir = tmp_path / "results"
@@ -971,5 +973,10 @@ printf '%s\n' 'status output containing token diagnostic-secret-token'
     assert "event" in all_calls
     assert "secret" not in all_calls
     assert "configmap" not in all_calls
+    event_call = next(line for line in all_calls.splitlines() if "get events" in line)
+    assert ".message" not in event_call
     diagnostic = (result_dir / "diagnostics.log").read_text()
     assert "diagnostic-secret-token" not in diagnostic
+    assert "diagnostic-user" not in diagnostic
+    assert "diagnostic-password" not in diagnostic
+    assert "diagnostic-generic-credential" not in diagnostic

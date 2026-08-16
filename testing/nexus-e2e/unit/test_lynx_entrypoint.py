@@ -853,7 +853,10 @@ def test_run_e2e_uses_godog_tags_config_and_preserves_test_exit(tmp_path):
     cwd, e2e_config, args = calls.read_text().strip().split("|", 2)
     assert cwd == str(testing_dir)
     assert e2e_config == str(config)
-    assert args == "--godog.tags=@e2e && ~@slow"
+    assert args == (
+        "--godog.concurrency=2 --godog.format=allure "
+        "--godog.tags=@e2e && ~@slow"
+    )
 
 
 def test_run_e2e_defaults_to_e2e_tag_and_uses_writable_copy(tmp_path):
@@ -882,7 +885,7 @@ def test_run_e2e_defaults_to_e2e_tag_and_uses_writable_copy(tmp_path):
     assert result.returncode == 0, result.stderr
     cwd, args = calls.read_text().strip().split("|", 1)
     assert cwd != str(testing_dir)
-    assert args == "--godog.tags=@e2e"
+    assert args == "--godog.concurrency=2 --godog.format=allure --godog.tags=@e2e"
     assert Path(cwd).exists() is False
 
 

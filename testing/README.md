@@ -98,7 +98,7 @@ docker run --rm \
   "$TESTING_IMAGE" --help
 ```
 
-之所以需要 `--entrypoint`，是因为测试镜像的默认 entrypoint 是 `nexus.test`，而非导入器。导入器使用 `requests` 访问 HTTPS upstream，默认校验 TLS 证书。当前测试进程到 tested Nexus 的 `NexusClient` 连接使用 `verify=False`，会跳过该段证书校验。tested Nexus 到 upstream 的 proxy remote 未启用 Nexus custom trust store（`useTrustStore=false`），因此依赖 Nexus 运行环境的 JVM 默认信任链；使用私有 CA 时需在该运行环境中另行配置，不在本 E2E 流程的自动配置范围内。
+之所以需要 `--entrypoint`，是因为测试镜像的默认 entrypoint 是 `/app/lynx-entrypoint.sh`，而非导入器；仅需直接运行已编译测试时也可以用 `--entrypoint nexus.test` 覆盖。导入器使用 `requests` 访问 HTTPS upstream，默认校验 TLS 证书。当前测试进程到 tested Nexus 的 `NexusClient` 连接使用 `verify=False`，会跳过该段证书校验。tested Nexus 到 upstream 的 proxy remote 未启用 Nexus custom trust store（`useTrustStore=false`），因此依赖 Nexus 运行环境的 JVM 默认信任链；使用私有 CA 时需在该运行环境中另行配置，不在本 E2E 流程的自动配置范围内。
 
 运行 pytest 中的 Maven proxy E2E 时，必须向测试进程传入 `MAVEN_UPSTREAM_URL`、`MAVEN_UPSTREAM_USERNAME` 和 `MAVEN_UPSTREAM_PASSWORD`；`MAVEN_UPSTREAM_REPOSITORY` 可省略并使用默认值。proxy 运行阶段应改用独立的 upstream 只读账户，只授予读取该 hosted 仓库的权限，避免将导入阶段的创建/写入账户保存到 tested Nexus 的 proxy 配置中。两个阶段可以轮换同名 `MAVEN_UPSTREAM_USERNAME` 和 `MAVEN_UPSTREAM_PASSWORD` 的值：导入完成后，在启动 pytest 前将它们替换为只读账户凭据。tested Nexus 自身的连接信息仍通过独立的 `NEXUS_URL`、`NEXUS_USERNAME` 和 `NEXUS_PASSWORD` 配置，不要与 upstream Nexus 凭据混用。测试会用 upstream 的 URL 和只读凭据配置 tested Nexus 的 `maven-central` Basic-auth remote，然后通过 tested Nexus 验证依赖下载。
 

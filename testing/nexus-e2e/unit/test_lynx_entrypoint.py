@@ -78,7 +78,7 @@ def test_require_positive_integer_rejects_invalid_values(value):
     assert "RETRIES" in result.stderr
 
 
-@pytest.mark.parametrize("value", ["1", "42", "0007"])
+@pytest.mark.parametrize("value", ["1", "42", "0007", "0008", "0009"])
 def test_require_positive_integer_accepts_digit_only_nonzero_values(value):
     result = run_bash(f"require_positive_integer RETRIES {value}")
 
@@ -186,4 +186,27 @@ def test_wait_for_value_times_out_a_hanging_probe():
 
     assert result.returncode == 1
     assert time.monotonic() - started_at < 3
+    assert "timed out" in result.stderr.lower()
+
+
+@pytest.mark.parametrize("timeout", ["0008", "0009"])
+def test_wait_for_value_treats_leading_zero_timeout_as_decimal(timeout):
+    result = run_bash(
+        f'wait_for_value "operator readiness" ready {timeout} printf ready',
+        env={"LYNX_POLL_INTERVAL": "1", "LYNX_WAIT_HEARTBEAT": "1"},
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("name", ["LYNX_POLL_INTERVAL", "LYNX_WAIT_HEARTBEAT"])
+@pytest.mark.parametrize("value", ["0008", "0009"])
+def test_wait_for_value_treats_leading_zero_timing_settings_as_decimal(name, value):
+    result = run_bash(
+        'wait_for_value "operator readiness" ready 1 printf not-ready',
+        env={name: value},
+        timeout=3,
+    )
+
+    assert result.returncode == 1
     assert "timed out" in result.stderr.lower()

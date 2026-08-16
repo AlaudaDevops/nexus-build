@@ -60,6 +60,9 @@ wait_for_value() {
   require_positive_integer LYNX_POLL_INTERVAL "$poll_interval"
   require_positive_integer LYNX_WAIT_HEARTBEAT "$heartbeat_interval"
   require_positive_integer timeout "$timeout_seconds"
+  poll_interval=$((10#$poll_interval))
+  heartbeat_interval=$((10#$heartbeat_interval))
+  timeout_seconds=$((10#$timeout_seconds))
   require_command timeout
 
   local started_at=$SECONDS

@@ -359,10 +359,10 @@ def test_containerfile_final_image_packages_only_runtime_bundle_assets():
     assert "org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar" in final_stage
     assert "maven-deploy-plugin/2.8.2/maven-deploy-plugin-2.8.2.jar" in final_stage
     assert "maven-deploy-plugin/2.8.2/maven-deploy-plugin-2.8.2.pom" in final_stage
-    assert "ENTRYPOINT [\"nexus.test\"]" in final_stage
-    assert 'CMD ["--godog.concurrency=2", "--godog.format=allure", "--godog.tags= ~@e2e"]' in final_stage
+    assert "ENTRYPOINT [\"/app/lynx-entrypoint.sh\"]" in final_stage
+    assert not any(line.startswith("CMD ") for line in final_stage.splitlines())
     assert final_stage.count("ENTRYPOINT") == 1
-    assert final_stage.count("CMD") == 1
+    assert final_stage.count("CMD") == 0
     assert "settings.xml" not in final_stage
     assert "deployment" not in final_stage
     assert "com/nexus/test/test-publish" not in final_stage

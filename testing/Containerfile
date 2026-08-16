@@ -113,9 +113,16 @@ RUN chmod 755 /usr/local/bin/import-maven-e2e-dependencies && \
     test -r /opt/nexus-e2e/maven-repository/org/apache/maven/plugins/maven-deploy-plugin/2.8.2/maven-deploy-plugin-2.8.2.pom && \
     test -x /usr/local/bin/import-maven-e2e-dependencies
 
-COPY . /app
+COPY testing/features /app/testing/features
+COPY testing/testdata /app/testing/testdata
+COPY testing/hack /app/testing/hack
+COPY testing/nexus-e2e /app/testing/nexus-e2e
+COPY testing/lynx /app/lynx
+COPY testing/lynx-entrypoint.sh /app/lynx-entrypoint.sh
 
-RUN chmod -R 755 /app
+RUN chmod -R 755 /app && \
+    chmod 755 /app/lynx-entrypoint.sh && \
+    test -x /app/lynx-entrypoint.sh
 
 WORKDIR /app/testing
 
@@ -129,5 +136,4 @@ ENV LANG=zh_CN.UTF-8
 ENV LC_ALL=zh_CN.UTF-8
 ENV TEST_COMMAND="nexus.test"
 
-ENTRYPOINT ["nexus.test"]
-CMD ["--godog.concurrency=2", "--godog.format=allure", "--godog.tags= ~@e2e"]
+ENTRYPOINT ["/app/lynx-entrypoint.sh"]

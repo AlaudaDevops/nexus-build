@@ -44,6 +44,19 @@ acp:
 make test-e2e
 ```
 
+### Lynx 测试镜像入口
+
+测试镜像固定以 `/app/lynx-entrypoint.sh` 启动。必须设置 `API_URL`、
+`REGION_NAME`、`L5_PLUGINS_VERSION`，并通过 `TOKEN` 或
+`USERNAME`/`PASSWORD` 提供认证。结果目录使用 `RESULT_DIR`；未设置时兼容
+`TEST_RESULT_DIR`。可通过 `LYNX_INSTALL_TIMEOUT` 调整 Operator 安装超时，
+通过 `LYNX_E2E_TAGS` 调整 Godog 标签。
+
+原始 Allure 数据会规范化到 `${RESULT_DIR}/allure-result`，生成的报告位于
+`${RESULT_DIR}/allure-report`。失败时还会写入不包含 Secret 内容的
+`${RESULT_DIR}/diagnostics.log`。临时 kubeconfig 和 BDD 认证配置在退出时删除，
+安装后的 OLM 资源会保留以便诊断。
+
 ### 认证 Maven 上游的离线 E2E
 
 这个场景使用两个独立的 Nexus：

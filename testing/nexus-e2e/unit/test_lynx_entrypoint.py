@@ -13,6 +13,8 @@ AUTH = Path(__file__).parents[2] / "lynx" / "auth.sh"
 OLM = Path(__file__).parents[2] / "lynx" / "olm.sh"
 E2E = Path(__file__).parents[2] / "lynx" / "e2e.sh"
 DIAGNOSTICS = Path(__file__).parents[2] / "lynx" / "diagnostics.sh"
+ENTRYPOINT = Path(__file__).parents[2] / "lynx-entrypoint.sh"
+CONTAINERFILE = Path(__file__).parents[2] / "Containerfile"
 TIMESTAMP = r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]"
 
 
@@ -1154,3 +1156,118 @@ def test_collect_diagnostics_does_not_publish_when_sanitizer_fails(tmp_path):
     assert result.returncode != 0
     assert output.read_text() == "previous diagnostics\n"
     assert not list(result_dir.glob(".diagnostics.tmp.*"))
+
+
+def write_entrypoint_fixture(tmp_path, functions):
+    fixture = tmp_path / "fixture"
+    libraries = fixture / "lynx"
+    libraries.mkdir(parents=True)
+    (fixture / "lynx-entrypoint.sh").write_bytes(ENTRYPOINT.read_bytes())
+    for name in ("common", "auth", "olm", "e2e", "diagnostics"):
+        (libraries / f"{name}.sh").write_text(functions)
+    return fixture / "lynx-entrypoint.sh"
+
+
+def test_entrypoint_runs_phases_in_order_and_cleans_credentials(tmp_path):
+    calls = tmp_path / "calls"
+    result_dir = tmp_path / "results"
+    functions = '''
+log() { printf '%s\n' "$*" >> "$CALLS"; }
+fatal() { log "ERROR: $*"; exit 1; }
+require_env() { [[ -n ${!1:-} ]] || fatal "missing $1"; }
+require_command() { :; }
+require_positive_integer() { :; }
+resolve_access_token() { printf token; }
+write_proxy_kubeconfig() { printf kubeconfig > "$1"; log auth; }
+write_bdd_config() { printf config > "$1"; }
+install_operator() { log install; }
+run_e2e() { log e2e; }
+collect_allure_results() { log collect; }
+generate_allure_report() { log report; }
+collect_diagnostics() { log diagnostics; }
+'''
+    entrypoint = write_entrypoint_fixture(tmp_path, functions)
+
+    result = subprocess.run(
+        ["bash", str(entrypoint)],
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "API_URL": "https://acp.example.test",
+            "REGION_NAME": "region-one",
+            "TOKEN": "secret-token",
+            "L5_PLUGINS_VERSION": '{"nexus-ce-operator":"nexus-ce-operator.v4.2.1"}',
+            "RESULT_DIR": str(result_dir),
+            "CALLS": str(calls),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text().splitlines() == [
+        "auth", "install", "e2e", "collect", "report", "[DONE]"
+    ]
+    assert not list(result_dir.glob(".lynx-credentials.*"))
+
+
+def test_entrypoint_failure_preserves_status_collects_diagnostics_and_cleans_credentials(tmp_path):
+    calls = tmp_path / "calls"
+    result_dir = tmp_path / "results"
+    functions = '''
+log() { printf '%s\n' "$*" >> "$CALLS"; }
+fatal() { log "ERROR: $*"; exit 1; }
+require_env() { [[ -n ${!1:-} ]] || fatal "missing $1"; }
+require_command() { :; }
+require_positive_integer() { :; }
+resolve_access_token() { printf token; }
+write_proxy_kubeconfig() { printf kubeconfig > "$1"; }
+write_bdd_config() { printf config > "$1"; }
+install_operator() { :; }
+run_e2e() { return 37; }
+collect_allure_results() { log collect; }
+generate_allure_report() { log report; }
+collect_diagnostics() { log diagnostics; }
+'''
+    entrypoint = write_entrypoint_fixture(tmp_path, functions)
+
+    result = subprocess.run(
+        ["bash", str(entrypoint)],
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "API_URL": "https://acp.example.test",
+            "REGION_NAME": "region-one",
+            "TOKEN": "secret-token",
+            "L5_PLUGINS_VERSION": '{"nexus-ce-operator":"nexus-ce-operator.v4.2.1"}',
+            "RESULT_DIR": str(result_dir),
+            "CALLS": str(calls),
+        },
+    )
+
+    assert result.returncode == 37
+    assert calls.read_text().splitlines() == ["collect", "report", "diagnostics"]
+    assert not list(result_dir.glob(".lynx-credentials.*"))
+
+
+def test_entrypoint_requires_target_and_authentication_without_leaking_values(tmp_path):
+    result = subprocess.run(
+        ["bash", str(ENTRYPOINT)], text=True, capture_output=True,
+        env={"PATH": os.environ["PATH"], "RESULT_DIR": str(tmp_path / "results")},
+    )
+
+    assert result.returncode != 0
+    assert "API_URL" in result.stderr
+
+
+def test_containerfile_installs_fixed_executable_entrypoint_and_libraries_explicitly():
+    text = CONTAINERFILE.read_text()
+    entrypoint = ENTRYPOINT.read_text()
+
+    assert re.search(r"COPY\s+testing/lynx-entrypoint\.sh\s+/app/lynx-entrypoint\.sh", text)
+    assert re.search(r"COPY\s+testing/lynx\s+/app/lynx", text)
+    assert "chmod 755 /app/lynx-entrypoint.sh" in text
+    assert "test -x /app/lynx-entrypoint.sh" in text
+    assert "ENTRYPOINT [\"/app/lynx-entrypoint.sh\"]" in text
+    assert "set -x" not in entrypoint
+    assert not re.search(r"run_e2e\s*\|\|\s*true", entrypoint)

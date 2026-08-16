@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 _olm_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=common.sh
+# shellcheck source=testing/lynx/common.sh
 source "${_olm_dir}/common.sh"
 unset _olm_dir
 
@@ -14,6 +14,18 @@ export OPERATOR_PACKAGE OPERATOR_NAMESPACE OPERATOR_CHANNEL INSTALL_TIMEOUT
 _olm_timeout() {
   require_positive_integer INSTALL_TIMEOUT "$INSTALL_TIMEOUT"
   printf '%d\n' "$((10#$INSTALL_TIMEOUT))"
+}
+
+_olm_kubectl_for() {
+  local request_timeout=$1
+  shift
+  timeout "${request_timeout}s" kubectl "$@"
+}
+
+_olm_kubectl() {
+  local request_timeout
+  request_timeout=$(_olm_timeout) || return 1
+  _olm_kubectl_for "$request_timeout" "$@"
 }
 
 _olm_wait_value() {
@@ -53,14 +65,15 @@ _olm_wait_value() {
 _olm_timed_probe() {
   local remaining=$1 probe=$2
   shift 2
-  export -f "$probe"
+  # shellcheck disable=SC2163
+  export -f "$probe" _olm_kubectl _olm_kubectl_for _olm_timeout
   timeout "${remaining}s" bash -c '"$@"' bash "$probe" "$@"
 }
 
 resolve_operator_catalog() {
   local expected manifests resolved
   expected=$(listed_operator_version) || return 1
-  manifests=$(kubectl get packagemanifests -A -o json) || {
+  manifests=$(_olm_kubectl get packagemanifests -A -o json) || {
     log "ERROR: failed to list OLM PackageManifests"
     return 1
   }
@@ -87,17 +100,17 @@ resolve_operator_catalog() {
 }
 
 _catalog_ready() {
-  kubectl get catalogsource "$CATALOG_SOURCE" -n "$CATALOG_NAMESPACE" -o json 2>/dev/null |
+  _olm_kubectl get catalogsource "$CATALOG_SOURCE" -n "$CATALOG_NAMESPACE" -o json 2>/dev/null |
     jq -r '.status.connectionState.lastObservedState // ""'
 }
 
 ensure_operator_group() {
   local groups count valid
-  groups=$(kubectl get operatorgroups -n "$OPERATOR_NAMESPACE" -o json) || return 1
+  groups=$(_olm_kubectl get operatorgroups -n "$OPERATOR_NAMESPACE" -o json) || return 1
   count=$(printf '%s' "$groups" | jq '.items | length') || return 1
   case $count in
     0)
-      kubectl apply -f - <<EOF
+      _olm_kubectl apply -f - <<EOF
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -124,7 +137,7 @@ EOF
 
 ensure_subscription() {
   local existing compatible
-  if existing=$(kubectl get subscription "$OPERATOR_PACKAGE" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null); then
+  if existing=$(_olm_kubectl get subscription "$OPERATOR_PACKAGE" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null); then
     compatible=$(printf '%s' "$existing" | jq -r \
       --arg package "$OPERATOR_PACKAGE" --arg source "$CATALOG_SOURCE" \
       --arg source_ns "$CATALOG_NAMESPACE" --arg channel "$OPERATOR_CHANNEL" \
@@ -138,7 +151,7 @@ ensure_subscription() {
     }
   fi
 
-  kubectl apply -f - <<EOF
+  _olm_kubectl apply -f - <<EOF
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -156,7 +169,7 @@ EOF
 
 _subscription_state() {
   local subscription terminal ref
-  subscription=$(kubectl get subscription "$OPERATOR_PACKAGE" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null) || {
+  subscription=$(_olm_kubectl get subscription "$OPERATOR_PACKAGE" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null) || {
     printf 'waiting\n'
     return
   }
@@ -207,7 +220,7 @@ wait_for_install_plan() {
   done
   remaining=$((timeout_seconds - (SECONDS - started)))
   ((remaining > 0)) || { log "Timed out after ${timeout_seconds}s before InstallPlan approval"; return 1; }
-  timeout "${remaining}s" kubectl patch installplan "$install_plan" -n "$OPERATOR_NAMESPACE" \
+  _olm_kubectl_for "$remaining" patch installplan "$install_plan" -n "$OPERATOR_NAMESPACE" \
     --type merge -p '{"spec":{"approved":true}}' >/dev/null || {
       log "ERROR: failed to approve InstallPlan within the installation deadline"
       return 1
@@ -230,7 +243,7 @@ wait_for_install_plan() {
     probe_timeout=$((next_heartbeat - SECONDS))
     ((probe_timeout < 1)) && probe_timeout=1
     ((probe_timeout > remaining)) && probe_timeout=$remaining
-    phase=$(timeout "${probe_timeout}s" kubectl get installplan "$install_plan" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
+    phase=$(_olm_kubectl_for "$probe_timeout" get installplan "$install_plan" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
       jq -r '.status.phase // ""')
     [[ $phase == Complete ]] && return 0
     [[ $phase == Failed ]] && { log "ERROR: InstallPlan failed"; return 1; }
@@ -243,7 +256,7 @@ wait_for_install_plan() {
 }
 
 _csv_phase() {
-  kubectl get clusterserviceversion "$OPERATOR_CSV" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
+  _olm_kubectl get clusterserviceversion "$OPERATOR_CSV" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
     jq -r '.status.phase // ""'
 }
 
@@ -255,16 +268,19 @@ wait_for_csv() {
 
 wait_for_deployment() {
   local csv deployments deployment timeout_seconds
-  csv=$(kubectl get clusterserviceversion "$OPERATOR_CSV" -n "$OPERATOR_NAMESPACE" -o json) || return 1
+  csv=$(_olm_kubectl get clusterserviceversion "$OPERATOR_CSV" -n "$OPERATOR_NAMESPACE" -o json) || return 1
   deployments=$(printf '%s' "$csv" | jq -r '.spec.install.spec.deployments // [] | length') || return 1
   [[ $deployments == 1 ]] || {
     log "ERROR: expected the CSV to own exactly one Deployment"
     return 1
   }
   deployment=$(printf '%s' "$csv" | jq -r '.spec.install.spec.deployments[0].name') || return 1
-  export deployment
+  OLM_DEPLOYMENT=$deployment
+  export OLM_DEPLOYMENT
+  # Invoked indirectly by _olm_wait_value.
+  # shellcheck disable=SC2329
   _deployment_available() {
-    kubectl get deployment "$deployment" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
+    _olm_kubectl get deployment "$OLM_DEPLOYMENT" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null |
       jq -r 'any(.status.conditions[]?; .type == "Available" and .status == "True")'
   }
   timeout_seconds=$(_olm_timeout) || return 1
@@ -273,12 +289,12 @@ wait_for_deployment() {
 
 _nexus_crd_ready() {
   local crd conditions served discovered
-  crd=$(kubectl get crd nexuses.operator.alaudadevops.io -o json 2>/dev/null) || { printf 'false\n'; return; }
+  crd=$(_olm_kubectl get crd nexuses.operator.alaudadevops.io -o json 2>/dev/null) || { printf 'false\n'; return; }
   conditions=$(printf '%s' "$crd" | jq -r '
     any(.status.conditions[]?; .type == "Established" and .status == "True")
     and any(.status.conditions[]?; .type == "NamesAccepted" and .status == "True")') || return 1
   served=$(printf '%s' "$crd" | jq -r 'any(.spec.versions[]?; .name == "v1alpha1" and .served == true)') || return 1
-  discovered=$(kubectl api-resources --api-group=operator.alaudadevops.io -o name 2>/dev/null |
+  discovered=$(_olm_kubectl api-resources --api-group=operator.alaudadevops.io -o name 2>/dev/null |
     awk '$0 == "nexuses.operator.alaudadevops.io" { found=1 } END { print found ? "true" : "false" }')
   [[ $conditions == true && $served == true && $discovered == true ]] && printf 'true\n' || printf 'false\n'
 }
@@ -290,12 +306,12 @@ wait_for_nexus_crd() {
 }
 
 install_operator() {
-  local timeout_seconds
+  local timeout_seconds namespace_yaml
   require_command kubectl
   require_command jq
   timeout_seconds=$(_olm_timeout) || return 1
-  kubectl create namespace "$OPERATOR_NAMESPACE" --dry-run=client -o yaml |
-    kubectl apply -f - >/dev/null || return 1
+  namespace_yaml=$(_olm_kubectl create namespace "$OPERATOR_NAMESPACE" --dry-run=client -o yaml) || return 1
+  printf '%s\n' "$namespace_yaml" | _olm_kubectl apply -f - >/dev/null || return 1
   resolve_operator_catalog || return 1
   _olm_wait_value "CatalogSource ${CATALOG_SOURCE} readiness" READY "$timeout_seconds" _catalog_ready || return 1
   ensure_operator_group || return 1

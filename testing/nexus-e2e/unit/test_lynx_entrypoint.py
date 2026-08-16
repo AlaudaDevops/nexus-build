@@ -283,6 +283,19 @@ fi
     assert "deadline" in result.stderr.lower()
 
 
+def test_install_operator_bounds_hung_namespace_precheck(tmp_path):
+    write_fake_kubectl(tmp_path, "sleep 10\n")
+    started_at = time.monotonic()
+    result = run_olm_bash(
+        "install_operator",
+        env=olm_env(tmp_path, LYNX_INSTALL_TIMEOUT="1"),
+        timeout=3,
+    )
+
+    assert result.returncode != 0
+    assert time.monotonic() - started_at < 3
+
+
 def test_log_and_fatal_write_timestamped_messages_to_stderr():
     result = run_bash('log "starting"; (fatal "stopped")')
 

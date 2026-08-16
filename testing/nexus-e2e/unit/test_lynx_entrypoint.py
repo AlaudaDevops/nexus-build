@@ -565,17 +565,8 @@ def test_resolve_access_token_requires_a_complete_authentication_method():
     assert "PASSWORD" in result.stderr
 
 
-@pytest.mark.parametrize(
-    ("tls_env", "expected_tls_option"),
-    [
-        ({}, None),
-        ({"LYNX_TLS_INSECURE": "false"}, None),
-        ({"LYNX_CA_BUNDLE": "/trusted/acp-ca.pem"}, "--cacert /trusted/acp-ca.pem"),
-        ({"LYNX_TLS_INSECURE": "true"}, "--insecure"),
-    ],
-)
 def test_password_login_uses_secure_bounded_acp_dex_flow_without_leaking_credentials(
-    tmp_path, tls_env, expected_tls_option
+    tmp_path,
 ):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -625,7 +616,6 @@ fi
             "PASSWORD": password,
             "LYNX_TEST_CURL_CALLS": str(calls),
             "LYNX_HTTP_TIMEOUT": "7",
-            **tls_env,
         },
     )
 
@@ -640,23 +630,19 @@ fi
     assert "/dex/api/v1/authorize/local" in curl_calls
     assert "/console-platform/api/v1/token/callback" in curl_calls
     assert "--max-time 7" in curl_calls
+    assert "--fail-with-body" in curl_calls
     assert "--data-urlencode client_id=console+ui" in curl_calls
     assert "--data-urlencode state=opaque&state" in curl_calls
     assert "ignored-fragment" not in curl_calls
     assert "--url-query req=request&#+=%value" in curl_calls
     assert "--data-urlencode code=a&b#c+d=e%f" in curl_calls
     assert "--data-urlencode state=s&t#u+v=w%x" in curl_calls
-    if expected_tls_option:
-        assert expected_tls_option in curl_calls
-    else:
-        assert "--insecure" not in curl_calls
-        assert "--cacert" not in curl_calls
+    assert "--insecure" in curl_calls
 
 
-@pytest.mark.parametrize("value", ["1", "yes", "TRUE", ""])
-def test_password_login_rejects_invalid_tls_insecure_values_without_curl(tmp_path, value):
+def test_password_login_preserves_curl_error_details(tmp_path):
     fake_curl = tmp_path / "curl"
-    fake_curl.write_text("#!/usr/bin/env bash\nprintf called >&2\nexit 99\n")
+    fake_curl.write_text("#!/usr/bin/env bash\nprintf 'certificate verification failed\\n' >&2\nexit 60\n")
     fake_curl.chmod(0o755)
 
     result = run_auth_bash(
@@ -666,13 +652,12 @@ def test_password_login_rejects_invalid_tls_insecure_values_without_curl(tmp_pat
             "API_URL": "https://acp.example.test",
             "USERNAME": "user",
             "PASSWORD": "secret",
-            "LYNX_TLS_INSECURE": value,
         },
     )
 
     assert result.returncode != 0
-    assert "LYNX_TLS_INSECURE" in result.stderr
-    assert "called" not in result.stderr
+    assert "certificate verification failed" in result.stderr
+    assert "ACP token login request failed" in result.stderr
 
 
 def test_write_proxy_kubeconfig_uses_region_proxy_and_mode_0600(tmp_path):
@@ -692,6 +677,7 @@ def test_write_proxy_kubeconfig_uses_region_proxy_and_mode_0600(tmp_path):
     assert config["clusters"][0]["cluster"]["server"] == (
         "https://acp.example.test/kubernetes/region-one"
     )
+    assert config["clusters"][0]["cluster"]["insecure-skip-tls-verify"] is True
     assert config["users"][0]["user"]["token"] == token
     assert kubeconfig.stat().st_mode & 0o777 == 0o600
     assert token not in result.stdout + result.stderr
@@ -1284,6 +1270,47 @@ collect_diagnostics() { log diagnostics; }
     assert result.returncode == 37
     assert calls.read_text().splitlines() == ["collect", "report", "diagnostics"]
     assert not list(result_dir.glob(".lynx-credentials.*"))
+
+
+def test_entrypoint_setup_failure_collects_reports_and_diagnostics(tmp_path):
+    calls = tmp_path / "calls"
+    result_dir = tmp_path / "results"
+    functions = '''
+log() { printf '%s\n' "$*" >> "$CALLS"; }
+fatal() { log "ERROR: $*"; exit 1; }
+require_env() { [[ -n ${!1:-} ]] || fatal "missing $1"; }
+require_command() { :; }
+require_positive_integer() { :; }
+resolve_access_token() { log auth-failed; return 23; }
+write_proxy_kubeconfig() { return 99; }
+write_bdd_config() { return 99; }
+install_operator() { return 99; }
+run_e2e() { return 99; }
+collect_allure_results() { log collect; return 1; }
+generate_allure_report() { log report; }
+collect_diagnostics() { log diagnostics; }
+'''
+    entrypoint = write_entrypoint_fixture(tmp_path, functions)
+
+    result = subprocess.run(
+        ["bash", str(entrypoint)],
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "API_URL": "https://acp.example.test",
+            "REGION_NAME": "region-one",
+            "TOKEN": "secret-token",
+            "L5_PLUGINS_VERSION": '{"nexus-ce-operator":"nexus-ce-operator.v4.2.1"}',
+            "RESULT_DIR": str(result_dir),
+            "CALLS": str(calls),
+        },
+    )
+
+    assert result.returncode == 23
+    assert calls.read_text().splitlines() == [
+        "auth-failed", "collect", "report", "diagnostics"
+    ]
 
 
 def test_entrypoint_requires_target_and_authentication_without_leaking_values(tmp_path):

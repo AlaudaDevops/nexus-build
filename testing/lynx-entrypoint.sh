@@ -17,10 +17,15 @@ source "$script_dir/lynx/e2e.sh"
 source "$script_dir/lynx/diagnostics.sh"
 
 credential_dir=
+reports_collected=false
 
 on_exit() {
   local status=$?
   trap - EXIT
+  if [[ $reports_collected != true && -n ${RESULT_DIR:-} && -d ${RESULT_DIR:-} ]]; then
+    collect_allure_results || :
+    generate_allure_report || :
+  fi
   if ((status != 0)) && [[ -n ${RESULT_DIR:-} && -d ${RESULT_DIR:-} ]]; then
     collect_diagnostics || log "Failure diagnostics could not be collected"
   fi
@@ -70,6 +75,7 @@ collect_allure_results
 result_status=$?
 set -o errexit
 generate_allure_report
+reports_collected=true
 
 if ((test_status != 0)); then
   exit "$test_status"

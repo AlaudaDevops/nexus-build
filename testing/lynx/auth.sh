@@ -15,17 +15,13 @@ _auth_login_with_password() (
   local curl_options=(
     --silent
     --show-error
-    --fail
+    --fail-with-body
+    --insecure
     --connect-timeout "$request_timeout"
     --max-time "$request_timeout"
     --cookie "$cookie_jar"
     --cookie-jar "$cookie_jar"
   )
-  if [[ -n ${LYNX_CA_BUNDLE:-} ]]; then
-    curl_options+=(--cacert "$LYNX_CA_BUNDLE")
-  elif [[ ${LYNX_TLS_INSECURE:-} == true ]]; then
-    curl_options+=(--insecure)
-  fi
   local login_json auth_url authorize_json request_id
   local pubkey_json password_payload encrypted_password credentials_json
   local local_login_json redirect_url code state callback_json token
@@ -33,7 +29,7 @@ _auth_login_with_password() (
 
   login_json=$(curl "${curl_options[@]}" --get \
     --data-urlencode "redirect_uri=$api_url/console-platform" \
-    "$api_url/console-platform/api/v1/token/login" 2>/dev/null) \
+    "$api_url/console-platform/api/v1/token/login") \
     || fatal "ACP token login request failed"
   auth_url=$(printf '%s' "$login_json" | jq -er '.auth_url | select(type == "string" and length > 0)' 2>/dev/null) \
     || fatal "ACP token login response is invalid"
@@ -52,12 +48,12 @@ for key, value in parse_qsl(urlsplit(sys.argv[1]).query, keep_blank_values=True)
     authorize_options+=(--data-urlencode "$parameter")
   done
   authorize_json=$(curl "${curl_options[@]}" "${authorize_options[@]}" \
-    "$api_url/dex/api/v1/authorize" 2>/dev/null) \
+    "$api_url/dex/api/v1/authorize") \
     || fatal "ACP Dex authorization request failed"
   request_id=$(printf '%s' "$authorize_json" | jq -er '.req | select(type == "string" and length > 0)' 2>/dev/null) \
     || fatal "ACP Dex authorization response is invalid"
 
-  pubkey_json=$(curl "${curl_options[@]}" "$api_url/dex/pubkey" 2>/dev/null) \
+  pubkey_json=$(curl "${curl_options[@]}" "$api_url/dex/pubkey") \
     || fatal "ACP Dex public key request failed"
   printf '%s' "$pubkey_json" | jq -er '.pubkey | select(type == "string" and length > 0)' \
     >"$public_key" 2>/dev/null || fatal "ACP Dex public key response is invalid"
@@ -76,7 +72,7 @@ for key, value in parse_qsl(urlsplit(sys.argv[1]).query, keep_blank_values=True)
   local_login_json=$(printf '%s' "$credentials_json" | curl "${curl_options[@]}" \
     --url-query "req=$request_id" \
     --request POST --header 'Content-Type: application/json' --data-binary @- \
-    "$api_url/dex/api/v1/authorize/local" 2>/dev/null) \
+    "$api_url/dex/api/v1/authorize/local") \
     || fatal "ACP identity provider login failed"
   redirect_url=$(printf '%s' "$local_login_json" | jq -er \
     '.redirect_url | select(type == "string" and length > 0)' 2>/dev/null) \
@@ -103,7 +99,7 @@ sys.stdout.write(values[0])
 
   callback_json=$(curl "${curl_options[@]}" --get \
     --data-urlencode "code=$code" --data-urlencode "state=$state" \
-    "$api_url/console-platform/api/v1/token/callback" 2>/dev/null) \
+    "$api_url/console-platform/api/v1/token/callback") \
     || fatal "ACP token callback request failed"
   token=$(printf '%s' "$callback_json" | jq -er \
     '.id_token | select(type == "string" and length > 0)' 2>/dev/null) \
@@ -126,12 +122,6 @@ resolve_access_token() {
   require_command openssl
   require_command python3
   require_positive_integer LYNX_HTTP_TIMEOUT "${LYNX_HTTP_TIMEOUT:-30}"
-  if [[ ${LYNX_TLS_INSECURE+x} ]]; then
-    [[ $LYNX_TLS_INSECURE == true || $LYNX_TLS_INSECURE == false ]] \
-      || fatal "LYNX_TLS_INSECURE must be true or false when set"
-  fi
-  [[ -z ${LYNX_CA_BUNDLE:-} || ${LYNX_TLS_INSECURE:-} != true ]] \
-    || fatal "LYNX_CA_BUNDLE and LYNX_TLS_INSECURE cannot be used together"
   _auth_login_with_password
 }
 
@@ -157,7 +147,10 @@ write_proxy_kubeconfig() (
     {
       apiVersion: "v1",
       kind: "Config",
-      clusters: [{name: "target", cluster: {server: $server}}],
+      clusters: [{name: "target", cluster: {
+        server: $server,
+        "insecure-skip-tls-verify": true
+      }}],
       users: [{name: "target", user: {token: $token}}],
       contexts: [{name: "target", context: {cluster: "target", user: "target"}}],
       "current-context": "target"

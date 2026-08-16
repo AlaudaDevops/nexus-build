@@ -9,6 +9,7 @@ import pytest
 
 
 COMMON = Path(__file__).parents[2] / "lynx" / "common.sh"
+AUTH = Path(__file__).parents[2] / "lynx" / "auth.sh"
 TIMESTAMP = r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]"
 
 
@@ -24,6 +25,10 @@ def run_bash(script, *, env=None, timeout=5):
         env=command_env,
         timeout=timeout,
     )
+
+
+def run_auth_bash(script, *, env=None, timeout=5):
+    return run_bash(f'source "{AUTH}"\n{script}', env=env, timeout=timeout)
 
 
 def test_log_and_fatal_write_timestamped_messages_to_stderr():
@@ -210,3 +215,143 @@ def test_wait_for_value_treats_leading_zero_timing_settings_as_decimal(name, val
 
     assert result.returncode == 1
     assert "timed out" in result.stderr.lower()
+
+
+def test_resolve_access_token_uses_preissued_token_without_password_login(tmp_path):
+    fake_curl = tmp_path / "curl"
+    fake_curl.write_text("#!/usr/bin/env bash\nprintf 'curl must not run\\n' >&2\nexit 99\n")
+    fake_curl.chmod(0o755)
+    token = "preissued-secret-token"
+
+    result = run_auth_bash(
+        "resolve_access_token",
+        env={"PATH": f"{tmp_path}:{os.environ['PATH']}", "TOKEN": token},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == token
+    assert result.stderr == ""
+
+
+def test_resolve_access_token_requires_a_complete_authentication_method():
+    result = run_auth_bash(
+        "unset TOKEN USERNAME PASSWORD\nresolve_access_token",
+        env={"API_URL": "https://acp.example.test"},
+    )
+
+    assert result.returncode != 0
+    assert "TOKEN" in result.stderr
+    assert "USERNAME" in result.stderr
+    assert "PASSWORD" in result.stderr
+
+
+def test_password_login_uses_bounded_acp_dex_flow_without_leaking_credentials(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    calls = tmp_path / "curl.calls"
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        '''#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$LYNX_TEST_CURL_CALLS"
+case "$*" in
+  *'/console-platform/api/v1/token/login'*)
+    printf '%s\\n' '{"auth_url":"https://external/dex/auth?client_id=console&state=opaque"}' ;;
+  *'/dex/api/v1/authorize?'*) printf '%s\\n' '{"req":"request-id"}' ;;
+  *'/dex/pubkey'*) printf '%s\\n' '{"pubkey":"PUBLIC KEY DATA","ts":"123"}' ;;
+  *'/dex/api/v1/authorize/local?req=request-id'*)
+    printf '%s\\n' '{"redirect_url":"https://acp.example.test/console-platform?code=code-value&state=state-value"}' ;;
+  *'/console-platform/api/v1/token/callback'*) printf '%s\\n' '{"id_token":"issued-secret-token"}' ;;
+  *) exit 88 ;;
+esac
+'''
+    )
+    fake_curl.chmod(0o755)
+    fake_openssl = fake_bin / "openssl"
+    fake_openssl.write_text(
+        '''#!/usr/bin/env bash
+if [[ $1 == pkeyutl ]]; then
+  [[ "$*" == *'-pkeyopt rsa_padding_mode:pkcs1'* ]] || exit 91
+  cat >/dev/null
+  printf cipher
+elif [[ $1 == base64 ]]; then
+  cat >/dev/null
+  printf encrypted-password
+else
+  exit 92
+fi
+'''
+    )
+    fake_openssl.chmod(0o755)
+    password = "password-must-stay-secret"
+    username = "username-must-stay-secret"
+
+    result = run_auth_bash(
+        "resolve_access_token",
+        env={
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "API_URL": "https://acp.example.test/",
+            "USERNAME": username,
+            "PASSWORD": password,
+            "LYNX_TEST_CURL_CALLS": str(calls),
+            "LYNX_HTTP_TIMEOUT": "7",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "issued-secret-token"
+    assert password not in result.stdout + result.stderr
+    assert username not in result.stdout + result.stderr
+    curl_calls = calls.read_text()
+    assert "/console-platform/api/v1/token/login" in curl_calls
+    assert "/dex/api/v1/authorize?" in curl_calls
+    assert "/dex/pubkey" in curl_calls
+    assert "/dex/api/v1/authorize/local?req=request-id" in curl_calls
+    assert "/console-platform/api/v1/token/callback" in curl_calls
+    assert "--max-time 7" in curl_calls
+
+
+def test_write_proxy_kubeconfig_uses_region_proxy_and_mode_0600(tmp_path):
+    kubeconfig = tmp_path / "proxy.kubeconfig"
+    token = "kubeconfig-secret-token"
+    result = run_auth_bash(
+        f'write_proxy_kubeconfig "{kubeconfig}" "$TOKEN"',
+        env={
+            "API_URL": "https://acp.example.test/",
+            "REGION_NAME": "region-one",
+            "TOKEN": token,
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    config = json.loads(kubeconfig.read_text())
+    assert config["clusters"][0]["cluster"]["server"] == (
+        "https://acp.example.test/kubernetes/region-one"
+    )
+    assert config["users"][0]["user"]["token"] == token
+    assert kubeconfig.stat().st_mode & 0o777 == 0o600
+    assert token not in result.stdout + result.stderr
+
+
+def test_write_bdd_config_uses_acp_target_and_mode_0600(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    token = "bdd-secret-token"
+    result = run_auth_bash(
+        f'write_bdd_config "{config_path}" "$TOKEN"',
+        env={
+            "API_URL": "https://acp.example.test/",
+            "REGION_NAME": "region-one",
+            "TOKEN": token,
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    config = json.loads(config_path.read_text())
+    assert config == {
+        "acp": {
+            "baseUrl": "https://acp.example.test",
+            "token": token,
+            "cluster": "region-one",
+        }
+    }
+    assert config_path.stat().st_mode & 0o777 == 0o600
+    assert token not in result.stdout + result.stderr

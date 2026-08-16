@@ -157,6 +157,11 @@ spec:
         # integration-test already publishes its test image to).
         imageRepository: "{{ registry_url }}/alauda-devops-toolchain/nexus/nexus-ce-test"
         containerfilePath: testing/Containerfile
+        # ctyun-vm-integration-test forwards these fields to buildctl.  They
+        # must be explicit; otherwise Tekton leaves the field substitutions in
+        # the generated TaskRun and rejects its Pod before the image build.
+        context: "."
+        workingDir: "."
     - name: test
       value:
         # Ported from the original (pre-migration) test command -- only the

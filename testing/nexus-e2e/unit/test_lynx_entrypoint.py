@@ -15,6 +15,7 @@ E2E = Path(__file__).parents[2] / "lynx" / "e2e.sh"
 DIAGNOSTICS = Path(__file__).parents[2] / "lynx" / "diagnostics.sh"
 ENTRYPOINT = Path(__file__).parents[2] / "lynx-entrypoint.sh"
 CONTAINERFILE = Path(__file__).parents[2] / "Containerfile"
+INTEGRATION_PIPELINE = Path(__file__).parents[3] / ".tekton" / "integration-test.yaml"
 TIMESTAMP = r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]"
 
 
@@ -1306,3 +1307,14 @@ def test_containerfile_installs_fixed_executable_entrypoint_and_libraries_explic
     assert "ENTRYPOINT [\"/app/lynx-entrypoint.sh\"]" in text
     assert "set -x" not in entrypoint
     assert not re.search(r"run_e2e\s*\|\|\s*true", entrypoint)
+
+
+def test_integration_pipeline_supplies_complete_test_image_build_context():
+    text = INTEGRATION_PIPELINE.read_text()
+    build_test_image = text.split("- name: buildTestImage", 1)[1].split(
+        "- name: test", 1
+    )[0]
+
+    assert 'containerfilePath: testing/Containerfile' in build_test_image
+    assert 'context: "."' in build_test_image
+    assert 'workingDir: "."' in build_test_image

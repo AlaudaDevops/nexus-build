@@ -67,6 +67,7 @@ write_bdd_config "$LYNX_BDD_CONFIG" "$access_token"
 unset access_token
 
 install_operator
+prepare_e2e
 
 set +o errexit
 run_e2e

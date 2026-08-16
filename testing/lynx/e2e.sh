@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+prepare_e2e() {
+  local namespace=${BDD_LOCK_NAMESPACE:-bdd-testing}
+  local timeout_seconds=${LYNX_INSTALL_TIMEOUT:-900}
+  local namespace_yaml
+
+  require_positive_integer LYNX_INSTALL_TIMEOUT "$timeout_seconds"
+  require_command kubectl
+  require_command timeout
+  namespace_yaml=$(timeout "${timeout_seconds}s" kubectl create namespace "$namespace" \
+    --dry-run=client -o yaml) || return 1
+  printf '%s\n' "$namespace_yaml" \
+    | timeout "${timeout_seconds}s" kubectl apply -f - >/dev/null
+}
+
 run_e2e() {
   local testing_dir=${LYNX_TESTING_DIR:-/app/testing}
   local config=${LYNX_BDD_CONFIG:-${E2E_CONFIG:-}}

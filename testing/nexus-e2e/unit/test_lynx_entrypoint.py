@@ -864,6 +864,34 @@ def test_run_e2e_uses_godog_tags_config_and_preserves_test_exit(tmp_path):
     )
 
 
+def test_prepare_e2e_idempotently_applies_bdd_lock_namespace(tmp_path):
+    calls = tmp_path / "kubectl.calls"
+    write_fake_kubectl(
+        tmp_path,
+        '''printf '%s\n' "$*" >> "$CALLS"
+if [[ "$*" == *"create namespace"* ]]; then
+  printf '%s\n' 'apiVersion: v1' 'kind: Namespace' 'metadata:' '  name: bdd-testing'
+else
+  cat >/dev/null
+fi
+''',
+    )
+    env = {
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "CALLS": str(calls),
+        "LYNX_INSTALL_TIMEOUT": "2",
+    }
+
+    first = run_e2e_bash("prepare_e2e", env=env)
+    second = run_e2e_bash("prepare_e2e", env=env)
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    recorded = calls.read_text()
+    assert recorded.count("create namespace bdd-testing --dry-run=client -o yaml") == 2
+    assert recorded.count("apply -f -") == 2
+
+
 def test_run_e2e_defaults_to_e2e_tag_and_uses_writable_copy(tmp_path):
     testing_dir = tmp_path / "read-only-testing"
     testing_dir.mkdir()
@@ -1221,6 +1249,7 @@ resolve_access_token() { printf token; }
 write_proxy_kubeconfig() { printf kubeconfig > "$1"; log auth; }
 write_bdd_config() { printf config > "$1"; }
 install_operator() { log install; }
+prepare_e2e() { log prepare-e2e; }
 run_e2e() { log e2e; }
 collect_allure_results() { log collect; }
 generate_allure_report() { log report; }
@@ -1245,7 +1274,7 @@ collect_diagnostics() { log diagnostics; }
 
     assert result.returncode == 0, result.stderr
     assert calls.read_text().splitlines() == [
-        "auth", "install", "e2e", "collect", "report", "[DONE]"
+        "auth", "install", "prepare-e2e", "e2e", "collect", "report", "[DONE]"
     ]
     assert not list(result_dir.glob(".lynx-credentials.*"))
 
@@ -1263,6 +1292,7 @@ resolve_access_token() { printf token; }
 write_proxy_kubeconfig() { printf kubeconfig > "$1"; }
 write_bdd_config() { printf config > "$1"; }
 install_operator() { :; }
+prepare_e2e() { :; }
 run_e2e() { return 37; }
 collect_allure_results() { log collect; }
 generate_allure_report() { log report; }

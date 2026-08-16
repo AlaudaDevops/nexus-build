@@ -1081,6 +1081,7 @@ printf '%s\n' 'credential diagnostic-generic-credential'
 printf '%s\n' 'TOKEN=DIAGNOSTIC-UPPER-TOKEN'
 printf '%s\n' 'token="diagnostic quoted token"'
 printf '%s\n' 'Authorization: Bearer diagnostic-bearer remainder-secret'
+printf '%s\n' 'nexus-ce-operator Succeeded Available'
 printf '%s\n' 'stderr diagnostic-stderr-secret' >&2
 ''',
     )
@@ -1109,6 +1110,8 @@ printf '%s\n' 'stderr diagnostic-stderr-secret' >&2
     event_call = next(line for line in all_calls.splitlines() if "get events" in line)
     assert ".message" not in event_call
     diagnostic = (result_dir / "diagnostics.log").read_text()
+    assert "## OLM subscriptions" in diagnostic
+    assert "nexus-ce-operator Succeeded Available" in diagnostic
     assert "diagnostic-secret-token" not in diagnostic
     assert "diagnostic-user" not in diagnostic
     assert "diagnostic-password" not in diagnostic
@@ -1134,4 +1137,20 @@ def test_collect_diagnostics_rejects_symlink_log_destination(tmp_path):
 
     assert result.returncode != 0
     assert protected.read_text() == "unchanged\n"
+    assert not list(result_dir.glob(".diagnostics.tmp.*"))
+
+
+def test_collect_diagnostics_does_not_publish_when_sanitizer_fails(tmp_path):
+    result_dir = tmp_path / "results"
+    result_dir.mkdir()
+    output = result_dir / "diagnostics.log"
+    output.write_text("previous diagnostics\n")
+
+    result = run_diagnostics_bash(
+        "_mask_diagnostic_output() { return 71; }; collect_diagnostics",
+        env={"RESULT_DIR": str(result_dir)},
+    )
+
+    assert result.returncode != 0
+    assert output.read_text() == "previous diagnostics\n"
     assert not list(result_dir.glob(".diagnostics.tmp.*"))

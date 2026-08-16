@@ -257,7 +257,15 @@ spec:
           exit "${TEST_EXIT}"
     - name: reportUpload
       value:
+        # The shared Pipeline expands every reportUpload object field in its
+        # TaskRun, even when the optional value is empty.  Keep the complete
+        # object shape so Tekton never sees unresolved substitutions.
+        endpoint: ""
+        bucket: ""
+        component: ""
         dirs: "testing/allure-report testing/allure-results"
+        pathTemplate: "e2e-report/{component}/{time}"
+        preCommand: ""
         # DEVOPS-44489 (coordinator fix, 2026-07-24): explicit baseURL
         # override -- without it, reportUpload's own default resolved to
         # http://10.68.120.42:30880, which is the alauda-PIPELINES-build

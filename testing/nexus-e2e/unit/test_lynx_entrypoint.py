@@ -1318,3 +1318,21 @@ def test_integration_pipeline_supplies_complete_test_image_build_context():
     assert 'containerfilePath: testing/Containerfile' in build_test_image
     assert 'context: "."' in build_test_image
     assert 'workingDir: "."' in build_test_image
+
+
+def test_integration_pipeline_supplies_complete_report_upload_object():
+    text = INTEGRATION_PIPELINE.read_text()
+    report_upload = text.split("- name: reportUpload", 1)[1].split(
+        "- name: vmLabels", 1
+    )[0]
+
+    for field in (
+        "endpoint",
+        "bucket",
+        "component",
+        "dirs",
+        "pathTemplate",
+        "preCommand",
+        "baseURL",
+    ):
+        assert re.search(rf"^\s*{field}:", report_upload, re.MULTILINE)

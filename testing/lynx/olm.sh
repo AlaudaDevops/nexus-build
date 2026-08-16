@@ -137,7 +137,12 @@ EOF
 
 ensure_subscription() {
   local existing compatible
-  if existing=$(_olm_kubectl get subscription "$OPERATOR_PACKAGE" -n "$OPERATOR_NAMESPACE" -o json 2>/dev/null); then
+  if ! existing=$(_olm_kubectl get subscription "$OPERATOR_PACKAGE" -n "$OPERATOR_NAMESPACE" \
+    --ignore-not-found -o json 2>/dev/null); then
+    log "ERROR: failed to inspect existing Subscription"
+    return 1
+  fi
+  if [[ -n $existing ]]; then
     compatible=$(printf '%s' "$existing" | jq -r \
       --arg package "$OPERATOR_PACKAGE" --arg source "$CATALOG_SOURCE" \
       --arg source_ns "$CATALOG_NAMESPACE" --arg channel "$OPERATOR_CHANNEL" \

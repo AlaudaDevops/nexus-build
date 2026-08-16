@@ -136,6 +136,48 @@ fi
     assert "incompatible" in result.stderr
 
 
+def test_ensure_subscription_applies_only_after_successful_not_found_get(tmp_path):
+    calls = tmp_path / "calls"
+    write_fake_kubectl(
+        tmp_path,
+        '''
+printf '%s\n' "$*" >> "$CALLS"
+if [[ "$*" == *"get subscription"* ]]; then
+  [[ "$*" == *"--ignore-not-found"* ]] || exit 88
+elif [[ "$*" == *"apply -f -"* ]]; then
+  cat >/dev/null
+fi
+''',
+    )
+    result = run_olm_bash(
+        'OPERATOR_CSV=nexus-ce-operator.v4.2.1; CATALOG_SOURCE=catalog; CATALOG_NAMESPACE=olm; ensure_subscription',
+        env=olm_env(tmp_path, CALLS=str(calls)),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "apply -f -" in calls.read_text()
+
+
+def test_ensure_subscription_does_not_apply_after_operational_get_failure(tmp_path):
+    calls = tmp_path / "calls"
+    write_fake_kubectl(
+        tmp_path,
+        '''
+printf '%s\n' "$*" >> "$CALLS"
+if [[ "$*" == *"get subscription"* ]]; then exit 73
+elif [[ "$*" == *"apply -f -"* ]]; then cat >/dev/null
+fi
+''',
+    )
+    result = run_olm_bash(
+        'OPERATOR_CSV=nexus-ce-operator.v4.2.1; CATALOG_SOURCE=catalog; CATALOG_NAMESPACE=olm; ensure_subscription',
+        env=olm_env(tmp_path, CALLS=str(calls)),
+    )
+
+    assert result.returncode != 0
+    assert "apply -f -" not in calls.read_text()
+
+
 def test_wait_for_install_plan_fails_on_terminal_subscription_condition(tmp_path):
     write_fake_kubectl(
         tmp_path,
@@ -163,7 +205,7 @@ case "$*" in
   *"get catalogsource catalog -n olm"*) printf '%s\n' '{"status":{"connectionState":{"lastObservedState":"READY"}}}' ;;
   *"get operatorgroups"*) if [[ -f "$STATE" ]]; then printf '%s\n' '{"items":[{"spec":{}}]}'; else printf '%s\n' '{"items":[]}'; fi ;;
   *"get subscription nexus-ce-operator"*)
-    if [[ -f "$STATE" ]]; then printf '%s\n' '{"spec":{"name":"nexus-ce-operator","source":"catalog","sourceNamespace":"olm","channel":"stable","startingCSV":"nexus-ce-operator.v4.2.1","installPlanApproval":"Manual"},"status":{"installPlanRef":{"name":"ip-one"}}}'; else exit 1; fi ;;
+    if [[ -f "$STATE" ]]; then printf '%s\n' '{"spec":{"name":"nexus-ce-operator","source":"catalog","sourceNamespace":"olm","channel":"stable","startingCSV":"nexus-ce-operator.v4.2.1","installPlanApproval":"Manual"},"status":{"installPlanRef":{"name":"ip-one"}}}'; fi ;;
   *"get installplan ip-one"*) printf '%s\n' '{"status":{"phase":"Complete"}}' ;;
   *"patch installplan ip-one"*) touch "$PLAN" ;;
   *"get clusterserviceversion nexus-ce-operator.v4.2.1"*) if [[ -f "$PLAN" ]]; then printf '%s\n' '{"status":{"phase":"Succeeded"},"spec":{"install":{"spec":{"deployments":[{"name":"nexus-operator-controller-manager"}]}}}}'; else printf '%s\n' '{"status":{"phase":"Pending"}}'; fi ;;

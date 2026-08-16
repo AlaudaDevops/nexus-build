@@ -10,6 +10,7 @@ import pytest
 
 COMMON = Path(__file__).parents[2] / "lynx" / "common.sh"
 AUTH = Path(__file__).parents[2] / "lynx" / "auth.sh"
+OLM = Path(__file__).parents[2] / "lynx" / "olm.sh"
 TIMESTAMP = r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]"
 
 
@@ -29,6 +30,205 @@ def run_bash(script, *, env=None, timeout=5):
 
 def run_auth_bash(script, *, env=None, timeout=5):
     return run_bash(f'source "{AUTH}"\n{script}', env=env, timeout=timeout)
+
+
+def run_olm_bash(script, *, env=None, timeout=5):
+    return run_bash(f'source "{OLM}"\n{script}', env=env, timeout=timeout)
+
+
+def write_fake_kubectl(tmp_path, body):
+    fake = tmp_path / "kubectl"
+    fake.write_text("#!/usr/bin/env bash\nset -eu\n" + body)
+    fake.chmod(0o755)
+    return fake
+
+
+def olm_env(tmp_path, **extra):
+    return {
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "L5_PLUGINS_VERSION": '{"nexus-ce-operator":"nexus-ce-operator.v4.2.1"}',
+        "LYNX_POLL_INTERVAL": "1",
+        "LYNX_WAIT_HEARTBEAT": "1",
+        "LYNX_INSTALL_TIMEOUT": "2",
+        **extra,
+    }
+
+
+def test_resolve_operator_catalog_uses_selected_channel_and_exact_listed_csv(tmp_path):
+    write_fake_kubectl(
+        tmp_path,
+        '''
+[[ "$*" == *"get packagemanifests"* ]] || exit 91
+cat <<'JSON'
+{"items":[{"metadata":{"name":"other"}},{"metadata":{"name":"nexus-ce-operator"},"status":{"catalogSource":"nexus-catalog","catalogSourceNamespace":"olm","channels":[{"name":"fast","currentCSV":"wrong.v9"},{"name":"stable","currentCSV":"nexus-ce-operator.v4.2.1"}]}}]}
+JSON
+''',
+    )
+    result = run_olm_bash(
+        'resolve_operator_catalog; printf "%s|%s|%s\\n" "$OPERATOR_CSV" "$CATALOG_SOURCE" "$CATALOG_NAMESPACE"',
+        env=olm_env(tmp_path),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "nexus-ce-operator.v4.2.1|nexus-catalog|olm\n"
+
+
+def test_resolve_operator_catalog_rejects_channel_version_mismatch(tmp_path):
+    write_fake_kubectl(
+        tmp_path,
+        '''cat <<'JSON'
+{"items":[{"metadata":{"name":"nexus-ce-operator"},"status":{"catalogSource":"catalog","catalogSourceNamespace":"olm","channels":[{"name":"stable","currentCSV":"nexus-ce-operator.v9.9.9"}]}}]}
+JSON
+''',
+    )
+    result = run_olm_bash("resolve_operator_catalog", env=olm_env(tmp_path))
+
+    assert result.returncode != 0
+    assert "does not match" in result.stderr
+
+
+@pytest.mark.parametrize(("operator_groups", "target_namespaces", "ok"), [("0", "", True), ("1", "", True), ("1", "other", False), ("2", "", False)])
+def test_ensure_operator_group_requires_one_dedicated_all_namespaces_group(
+    tmp_path, operator_groups, target_namespaces, ok
+):
+    calls = tmp_path / "calls"
+    write_fake_kubectl(
+        tmp_path,
+        '''
+printf '%s\n' "$*" >> "$CALLS"
+if [[ "$*" == *"get operatorgroups"* ]]; then
+  printf '{"items":['
+  if [[ "$OG_COUNT" != 0 ]]; then printf '{"spec":{"targetNamespaces":%s}}' "${OG_TARGET:-[]}"; fi
+  if [[ "$OG_COUNT" == 2 ]]; then printf ',{"spec":{}}'; fi
+  printf ']}\n'
+elif [[ "$*" == *"apply -f -"* ]]; then cat >/dev/null
+fi
+''',
+    )
+    target = json.dumps([target_namespaces]) if target_namespaces else "[]"
+    result = run_olm_bash(
+        "ensure_operator_group",
+        env=olm_env(tmp_path, CALLS=str(calls), OG_COUNT=operator_groups, OG_TARGET=target),
+    )
+
+    assert (result.returncode == 0) is ok
+    if operator_groups == "0":
+        assert "apply -f -" in calls.read_text()
+
+
+def test_ensure_subscription_rejects_incompatible_existing_resource(tmp_path):
+    write_fake_kubectl(
+        tmp_path,
+        '''
+if [[ "$*" == *"get subscription"* ]]; then
+cat <<'JSON'
+{"spec":{"name":"nexus-ce-operator","source":"wrong-catalog","sourceNamespace":"olm","channel":"stable","startingCSV":"nexus-ce-operator.v4.2.1","installPlanApproval":"Manual"}}
+JSON
+fi
+''',
+    )
+    result = run_olm_bash(
+        'OPERATOR_CSV=nexus-ce-operator.v4.2.1; CATALOG_SOURCE=catalog; CATALOG_NAMESPACE=olm; ensure_subscription',
+        env=olm_env(tmp_path),
+    )
+
+    assert result.returncode != 0
+    assert "incompatible" in result.stderr
+
+
+def test_wait_for_install_plan_fails_on_terminal_subscription_condition(tmp_path):
+    write_fake_kubectl(
+        tmp_path,
+        '''
+if [[ "$*" == *"get subscription"* ]]; then
+  printf '%s\n' '{"status":{"conditions":[{"type":"ResolutionFailed","status":"True","reason":"ConstraintsNotSatisfiable"}]}}'
+fi
+''',
+    )
+    result = run_olm_bash("wait_for_install_plan", env=olm_env(tmp_path))
+
+    assert result.returncode != 0
+    assert "ResolutionFailed" in result.stderr
+
+
+def test_install_operator_is_idempotent_and_verifies_dynamic_deployment_and_crd(tmp_path):
+    calls = tmp_path / "calls"
+    state = tmp_path / "state"
+    write_fake_kubectl(
+        tmp_path,
+        '''
+printf '%s\n' "$*" >> "$CALLS"
+case "$*" in
+  *"get packagemanifests"*) printf '%s\n' '{"items":[{"metadata":{"name":"nexus-ce-operator"},"status":{"catalogSource":"catalog","catalogSourceNamespace":"olm","channels":[{"name":"stable","currentCSV":"nexus-ce-operator.v4.2.1"}]}}]}' ;;
+  *"get catalogsource catalog -n olm"*) printf '%s\n' '{"status":{"connectionState":{"lastObservedState":"READY"}}}' ;;
+  *"get operatorgroups"*) if [[ -f "$STATE" ]]; then printf '%s\n' '{"items":[{"spec":{}}]}'; else printf '%s\n' '{"items":[]}'; fi ;;
+  *"get subscription nexus-ce-operator"*)
+    if [[ -f "$STATE" ]]; then printf '%s\n' '{"spec":{"name":"nexus-ce-operator","source":"catalog","sourceNamespace":"olm","channel":"stable","startingCSV":"nexus-ce-operator.v4.2.1","installPlanApproval":"Manual"},"status":{"installPlanRef":{"name":"ip-one"}}}'; else exit 1; fi ;;
+  *"get installplan ip-one"*) printf '%s\n' '{"status":{"phase":"Complete"}}' ;;
+  *"patch installplan ip-one"*) touch "$PLAN" ;;
+  *"get clusterserviceversion nexus-ce-operator.v4.2.1"*) if [[ -f "$PLAN" ]]; then printf '%s\n' '{"status":{"phase":"Succeeded"},"spec":{"install":{"spec":{"deployments":[{"name":"nexus-operator-controller-manager"}]}}}}'; else printf '%s\n' '{"status":{"phase":"Pending"}}'; fi ;;
+  *"get deployment nexus-operator-controller-manager"*) printf '%s\n' '{"status":{"conditions":[{"type":"Available","status":"True"}]}}' ;;
+  *"get crd nexuses.operator.alaudadevops.io"*) printf '%s\n' '{"spec":{"versions":[{"name":"v1alpha1","served":true}]},"status":{"conditions":[{"type":"Established","status":"True"},{"type":"NamesAccepted","status":"True"}]}}' ;;
+  *"api-resources"*) printf '%s\n' 'nexuses.operator.alaudadevops.io' ;;
+  *"create namespace"*) printf '%s\n' 'apiVersion: v1' 'kind: Namespace' ;;
+  *"apply -f -"*) cat >/dev/null; touch "$STATE" ;;
+  *) exit 92 ;;
+esac
+''',
+    )
+    env = olm_env(tmp_path, CALLS=str(calls), STATE=str(state), PLAN=str(tmp_path / "plan"))
+
+    first = run_olm_bash("install_operator", env=env, timeout=8)
+    second = run_olm_bash("install_operator", env=env, timeout=8)
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    all_calls = calls.read_text()
+    assert "patch installplan ip-one" in all_calls
+    assert "get deployment nexus-operator-controller-manager" in all_calls
+    assert "api-resources" in all_calls
+
+
+def test_wait_for_csv_times_out_with_bounded_polling(tmp_path):
+    write_fake_kubectl(tmp_path, "printf '%s\\n' '{\"status\":{\"phase\":\"Pending\"}}'\n")
+    result = run_olm_bash(
+        "OPERATOR_CSV=nexus-ce-operator.v4.2.1; wait_for_csv",
+        env=olm_env(tmp_path, LYNX_INSTALL_TIMEOUT="1"),
+        timeout=3,
+    )
+
+    assert result.returncode != 0
+    assert "timed out" in result.stderr.lower()
+
+
+def test_install_operator_skips_install_plan_for_succeeded_exact_csv_but_verifies_runtime(tmp_path):
+    marker = tmp_path / "verified"
+    write_fake_kubectl(
+        tmp_path,
+        '''
+if [[ "$*" == *"create namespace"* ]]; then printf '%s\n' 'kind: Namespace'
+elif [[ "$*" == *"apply -f -"* ]]; then cat >/dev/null
+else exit 90
+fi
+''',
+    )
+    result = run_olm_bash(
+        f'''
+resolve_operator_catalog() {{ OPERATOR_CSV=nexus-ce-operator.v4.2.1; CATALOG_SOURCE=c; CATALOG_NAMESPACE=n; }}
+_catalog_ready() {{ printf READY; }}
+ensure_operator_group() {{ :; }}
+ensure_subscription() {{ :; }}
+_csv_phase() {{ printf Succeeded; }}
+wait_for_install_plan() {{ log "InstallPlan must not be required"; return 77; }}
+wait_for_deployment() {{ printf deployment >> "{marker}"; }}
+wait_for_nexus_crd() {{ printf crd >> "{marker}"; }}
+install_operator
+''',
+        env=olm_env(tmp_path),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert marker.read_text() == "deploymentcrd"
 
 
 def test_log_and_fatal_write_timestamped_messages_to_stderr():

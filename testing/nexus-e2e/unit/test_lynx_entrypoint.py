@@ -245,7 +245,18 @@ def test_resolve_access_token_requires_a_complete_authentication_method():
     assert "PASSWORD" in result.stderr
 
 
-def test_password_login_uses_bounded_acp_dex_flow_without_leaking_credentials(tmp_path):
+@pytest.mark.parametrize(
+    ("tls_env", "expected_tls_option"),
+    [
+        ({}, None),
+        ({"LYNX_TLS_INSECURE": "false"}, None),
+        ({"LYNX_CA_BUNDLE": "/trusted/acp-ca.pem"}, "--cacert /trusted/acp-ca.pem"),
+        ({"LYNX_TLS_INSECURE": "true"}, "--insecure"),
+    ],
+)
+def test_password_login_uses_secure_bounded_acp_dex_flow_without_leaking_credentials(
+    tmp_path, tls_env, expected_tls_option
+):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     calls = tmp_path / "curl.calls"
@@ -255,11 +266,11 @@ def test_password_login_uses_bounded_acp_dex_flow_without_leaking_credentials(tm
 printf '%s\\n' "$*" >> "$LYNX_TEST_CURL_CALLS"
 case "$*" in
   *'/console-platform/api/v1/token/login'*)
-    printf '%s\\n' '{"auth_url":"https://external/dex/auth?client_id=console&state=opaque"}' ;;
-  *'/dex/api/v1/authorize?'*) printf '%s\\n' '{"req":"request-id"}' ;;
+    printf '%s\\n' '{"auth_url":"https://external/dex/auth?client_id=console%2Bui&state=opaque%26state#ignored-fragment"}' ;;
+  *'/dex/api/v1/authorize/local'*)
+    printf '%s\\n' '{"redirect_url":"https://acp.example.test/console-platform?code=a%26b%23c%2Bd%3De%25f&state=s%26t%23u%2Bv%3Dw%25x#ignored"}' ;;
+  *'/dex/api/v1/authorize'*) printf '%s\\n' '{"req":"request&#+=%value"}' ;;
   *'/dex/pubkey'*) printf '%s\\n' '{"pubkey":"PUBLIC KEY DATA","ts":"123"}' ;;
-  *'/dex/api/v1/authorize/local?req=request-id'*)
-    printf '%s\\n' '{"redirect_url":"https://acp.example.test/console-platform?code=code-value&state=state-value"}' ;;
   *'/console-platform/api/v1/token/callback'*) printf '%s\\n' '{"id_token":"issued-secret-token"}' ;;
   *) exit 88 ;;
 esac
@@ -294,6 +305,7 @@ fi
             "PASSWORD": password,
             "LYNX_TEST_CURL_CALLS": str(calls),
             "LYNX_HTTP_TIMEOUT": "7",
+            **tls_env,
         },
     )
 
@@ -303,11 +315,44 @@ fi
     assert username not in result.stdout + result.stderr
     curl_calls = calls.read_text()
     assert "/console-platform/api/v1/token/login" in curl_calls
-    assert "/dex/api/v1/authorize?" in curl_calls
+    assert "/dex/api/v1/authorize" in curl_calls
     assert "/dex/pubkey" in curl_calls
-    assert "/dex/api/v1/authorize/local?req=request-id" in curl_calls
+    assert "/dex/api/v1/authorize/local" in curl_calls
     assert "/console-platform/api/v1/token/callback" in curl_calls
     assert "--max-time 7" in curl_calls
+    assert "--data-urlencode client_id=console+ui" in curl_calls
+    assert "--data-urlencode state=opaque&state" in curl_calls
+    assert "ignored-fragment" not in curl_calls
+    assert "--url-query req=request&#+=%value" in curl_calls
+    assert "--data-urlencode code=a&b#c+d=e%f" in curl_calls
+    assert "--data-urlencode state=s&t#u+v=w%x" in curl_calls
+    if expected_tls_option:
+        assert expected_tls_option in curl_calls
+    else:
+        assert "--insecure" not in curl_calls
+        assert "--cacert" not in curl_calls
+
+
+@pytest.mark.parametrize("value", ["1", "yes", "TRUE", ""])
+def test_password_login_rejects_invalid_tls_insecure_values_without_curl(tmp_path, value):
+    fake_curl = tmp_path / "curl"
+    fake_curl.write_text("#!/usr/bin/env bash\nprintf called >&2\nexit 99\n")
+    fake_curl.chmod(0o755)
+
+    result = run_auth_bash(
+        "resolve_access_token",
+        env={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "API_URL": "https://acp.example.test",
+            "USERNAME": "user",
+            "PASSWORD": "secret",
+            "LYNX_TLS_INSECURE": value,
+        },
+    )
+
+    assert result.returncode != 0
+    assert "LYNX_TLS_INSECURE" in result.stderr
+    assert "called" not in result.stderr
 
 
 def test_write_proxy_kubeconfig_uses_region_proxy_and_mode_0600(tmp_path):
@@ -390,3 +435,72 @@ def test_secret_config_writers_clean_temporary_files_on_command_failure(
     assert result.returncode != 0
     assert not list(tmp_path.glob(f"{filename}.tmp.*"))
     assert token not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    ("function_name", "filename"),
+    [("write_proxy_kubeconfig", "proxy.kubeconfig"), ("write_bdd_config", "config.yaml")],
+)
+def test_secret_config_writers_use_secure_destination_local_temporary_files(
+    tmp_path, function_name, filename
+):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    mktemp_calls = tmp_path / "mktemp.calls"
+    fake_mktemp = fake_bin / "mktemp"
+    fake_mktemp.write_text(
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >> "$LYNX_TEST_MKTEMP_CALLS"\n'
+        'exec /usr/bin/mktemp "$@"\n'
+    )
+    fake_mktemp.chmod(0o755)
+    destination = tmp_path / filename
+    protected_target = tmp_path / "protected-target"
+    protected_target.write_text("must-not-change")
+    destination.symlink_to(protected_target)
+
+    result = run_auth_bash(
+        f'{function_name} "{destination}" "$TOKEN"',
+        env={
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "API_URL": "https://acp.example.test/",
+            "REGION_NAME": "region-one",
+            "TOKEN": "temporary-file-secret",
+            "LYNX_TEST_MKTEMP_CALLS": str(mktemp_calls),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert mktemp_calls.read_text().strip() == f"{destination}.tmp.XXXXXX"
+    assert protected_target.read_text() == "must-not-change"
+    assert not destination.is_symlink()
+    assert not list(tmp_path.glob(f"{filename}.tmp.*"))
+
+
+@pytest.mark.parametrize(
+    ("function_name", "filename"),
+    [("write_proxy_kubeconfig", "proxy.kubeconfig"), ("write_bdd_config", "config.yaml")],
+)
+def test_secret_config_writers_clean_temporary_files_when_signalled(
+    tmp_path, function_name, filename
+):
+    fake_jq = tmp_path / "jq"
+    fake_jq.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf partial-secret-output\n"
+        'kill -TERM "$PPID"\n'
+    )
+    fake_jq.chmod(0o755)
+    destination = tmp_path / filename
+
+    result = run_auth_bash(
+        f'{function_name} "{destination}" "$TOKEN"',
+        env={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "API_URL": "https://acp.example.test/",
+            "REGION_NAME": "region-one",
+            "TOKEN": "signal-cleanup-secret",
+        },
+    )
+
+    assert result.returncode != 0
+    assert not list(tmp_path.glob(f"{filename}.tmp.*"))

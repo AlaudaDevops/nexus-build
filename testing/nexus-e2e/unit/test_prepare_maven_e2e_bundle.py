@@ -378,6 +378,7 @@ def test_dockerignore_excludes_workspace_artifacts_without_excluding_build_input
     assert {".git", ".git/**", ".worktrees", "**/__pycache__", "**/*.py[cod]"} <= patterns
     assert {"**/target", "**/target/**", ".env", ".env.*"} <= patterns
     assert {".pytest_cache", "**/.pytest_cache", ".DS_Store", "**/.DS_Store"} <= patterns
+    assert {"testing/nexus-e2e/unit", "testing/nexus-e2e/unit/**"} <= patterns
     assert not {
         "go.mod",
         "testing",

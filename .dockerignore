@@ -9,6 +9,11 @@
 **/.pytest_cache
 **/.cache
 
+# Development-only unit tests are run in CI and must not be copied into the
+# runtime E2E image, where an unscoped pytest invocation could collect them.
+testing/nexus-e2e/unit
+testing/nexus-e2e/unit/**
+
 **/target
 **/target/**
 

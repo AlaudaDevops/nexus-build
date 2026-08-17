@@ -71,7 +71,10 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo, tmp_path):
             create_server_config("nexus", nexus_config.username, nexus_config.password),
         ]
         mirrors_configs = [
-            create_mirror_config("bundle-central", "central", bundle_url, None)
+            create_mirror_config("bundle-central", "central", bundle_url, None),
+            create_mirror_config(
+                "nexus", "nexus", nexus_config.url, hosted_repo
+            ),
         ]
         settings_path = create_settings(server_configs, mirrors_configs)
         publish_xml_path = project_path / 'publish.xml'

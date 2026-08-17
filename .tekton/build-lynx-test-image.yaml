@@ -46,6 +46,7 @@ spec:
     - name: file-list-for-commit-sha
       value:
         - .tekton/build-lynx-test-image.yaml
+        - .dockerignore
         - testing/Containerfile.lynx-hotfix
         - testing/lynx-entrypoint.sh
         - testing/lynx

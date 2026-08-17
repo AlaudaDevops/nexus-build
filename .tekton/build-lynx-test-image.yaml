@@ -48,6 +48,7 @@ spec:
         - .tekton/build-lynx-test-image.yaml
         - .dockerignore
         - testing/Containerfile.lynx-hotfix
+        - testing/nexus-e2e/test_maven_repo.py
         - testing/lynx-entrypoint.sh
         - testing/lynx
 

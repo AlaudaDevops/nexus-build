@@ -1,4 +1,5 @@
 import os
+import subprocess
 from xml.etree import ElementTree
 import tempfile
 import time
@@ -7,6 +8,10 @@ import allure
 from pathlib import Path
 
 from libs.maven_upstream import select_proxy_remote
+
+
+MAVEN_BUNDLE = Path("/opt/nexus-e2e/maven-repository")
+MAVEN_NAMESPACE = "http://maven.apache.org/POM/4.0.0"
 
 # DEVOPS-44489: force Maven's own ${user.home} to agree with $HOME. The
 # run-test container runs as a non-root UID with no /etc/passwd entry, so
@@ -54,7 +59,11 @@ def _maven_central_mirror_url():
     return "https://artifacts.alauda.io/repository/maven-central"
 
 
-def test_maven_publish(nexus_client, nexus_config, hosted_repo):
+def test_maven_publish(nexus_client, nexus_config, hosted_repo, tmp_path):
+    bundle_url = MAVEN_BUNDLE.as_uri()
+    deploy_local_repo = tmp_path / "deploy-repository"
+    download_local_repo = tmp_path / "download-repository"
+
     with allure.step('Build and deploy Maven project'):
         project_path = Path(f'test_projects/maven')
 
@@ -62,7 +71,7 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo):
             create_server_config("nexus", nexus_config.username, nexus_config.password),
         ]
         mirrors_configs = [
-            create_mirror_config("ucloud", "central", _maven_central_mirror_url(), None)
+            create_mirror_config("bundle-central", "central", bundle_url, None)
         ]
         settings_path = create_settings(server_configs, mirrors_configs)
         publish_xml_path = project_path / 'publish.xml'
@@ -75,7 +84,20 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo):
         # Write the modified content to the temporary file
         with open(project_path / temp_publish_xml, 'w') as f:
             f.write(content)
-        assert os.system(f'cd {project_path} && mvn -s {settings_path} -f {temp_publish_xml} clean deploy') == 0
+        subprocess.run(
+            [
+                "mvn",
+                "-s",
+                str(settings_path),
+                f"-Dmaven.repo.local={deploy_local_repo}",
+                "-f",
+                temp_publish_xml,
+                "clean",
+                "deploy",
+            ],
+            cwd=project_path,
+            check=True,
+        )
 
     with allure.step('Get snapshot version'):
         tree = ElementTree.parse(project_path / 'publish.xml')
@@ -101,28 +123,35 @@ def test_maven_publish(nexus_client, nexus_config, hosted_repo):
         assert response.status_code == 200
 
     with allure.step('Download dependency'):
-        server_configs = [
-            create_server_config("nexus", nexus_config.username, nexus_config.password),
-        ]
-        mirrors_configs = [
-            create_mirror_config("nexus","nexus", nexus_config.url, hosted_repo),
-            create_mirror_config("ucloud", "central", _maven_central_mirror_url(), None)
-        ]
-        settings_path = create_settings(server_configs, mirrors_configs)
         project_path = Path(f'test_projects/maven')
-        cmd = (f'cd {project_path} && '
-               f'mvn -s {settings_path} -f download.xml package')
-        assert os.system(cmd) == 0
+        download_xml_path = create_download_project(
+            project_path / "download.xml",
+            tmp_path / "download.xml",
+            f"{nexus_config.url}/repository/{hosted_repo}/",
+        )
+        subprocess.run(
+            [
+                "mvn",
+                "-s",
+                str(settings_path),
+                f"-Dmaven.repo.local={download_local_repo}",
+                "-f",
+                str(download_xml_path),
+                "package",
+            ],
+            cwd=project_path,
+            check=True,
+        )
 
     with allure.step('Verify dependency download'):
         artifact_path = f"{group_id.replace('.', '/')}/{artifact_id}/{version}"
         jar_name = f"{artifact_id}-{version}.jar"
 
-        local_repo = Path.home() / '.m2/repository' / artifact_path / jar_name
+        local_repo = download_local_repo / artifact_path / jar_name
         assert local_repo.exists(), f"Dependency not found at {local_repo}"
 
 
-def test_maven_proxy(nexus_client, nexus_config):
+def test_maven_proxy(nexus_client, nexus_config, tmp_path):
     with allure.step('Set nexus proxy config'):
         remote = select_proxy_remote(os.environ)
         nexus_client.update_proxy_config(
@@ -145,8 +174,21 @@ def test_maven_proxy(nexus_client, nexus_config):
 
         project_path = Path(f'test_projects/maven')
 
-        cmd = f'rm -rf ~/.m2/repository && cd {project_path} &&  mvn -s {settings_path} -f publish.xml clean install'
-        assert os.system(cmd) == 0
+        local_repository = tmp_path / "proxy-repository"
+        subprocess.run(
+            [
+                "mvn",
+                "-s",
+                str(settings_path),
+                f"-Dmaven.repo.local={local_repository}",
+                "-f",
+                "publish.xml",
+                "clean",
+                "install",
+            ],
+            cwd=project_path,
+            check=True,
+        )
 
     with allure.step('Verify artifact availability'):
         group_id = 'junit'
@@ -156,8 +198,28 @@ def test_maven_proxy(nexus_client, nexus_config):
         artifact_path = f"{group_id.replace('.', '/')}/{artifact_id}/{version}"
         jar_name = f"{artifact_id}-{version}.jar"
 
-        local_repo = Path.home() / '.m2/repository' / artifact_path / jar_name
+        local_repo = local_repository / artifact_path / jar_name
         assert local_repo.exists(), f"Dependency not found at {local_repo}"
+
+
+def create_download_project(source_path, destination_path, repository_url):
+    ElementTree.register_namespace("", MAVEN_NAMESPACE)
+    tree = ElementTree.parse(source_path)
+    root = tree.getroot()
+    repositories = ElementTree.SubElement(
+        root, f"{{{MAVEN_NAMESPACE}}}repositories"
+    )
+    repository = ElementTree.SubElement(
+        repositories, f"{{{MAVEN_NAMESPACE}}}repository"
+    )
+    repository_id = ElementTree.SubElement(
+        repository, f"{{{MAVEN_NAMESPACE}}}id"
+    )
+    repository_id.text = "nexus"
+    url = ElementTree.SubElement(repository, f"{{{MAVEN_NAMESPACE}}}url")
+    url.text = repository_url
+    tree.write(destination_path, encoding="unicode", xml_declaration=True)
+    return destination_path
 
 
 def create_settings(server_configs, mirror_configs):

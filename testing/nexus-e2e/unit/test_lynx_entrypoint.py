@@ -1414,12 +1414,15 @@ def test_containerfile_installs_fixed_executable_entrypoint_and_libraries_explic
     assert not re.search(r"run_e2e\s*\|\|\s*true", entrypoint)
 
 
-def test_hotfix_containerfile_only_replaces_lynx_runtime():
+def test_hotfix_containerfile_updates_lynx_runtime_and_removes_unit_tests():
     text = HOTFIX_CONTAINERFILE.read_text()
 
     assert text.startswith("FROM build-harbor.alauda.cn/devops/nexus-ce-test:")
     assert "COPY testing/lynx /app/lynx" in text
     assert "COPY testing/lynx-entrypoint.sh /app/lynx-entrypoint.sh" in text
+    assert "COPY testing/nexus-e2e/test_maven_repo.py /app/testing/nexus-e2e/test_maven_repo.py" in text
+    assert "rm -rf /app/testing/nexus-e2e/unit" in text
+    assert "test ! -e /app/testing/nexus-e2e/unit" in text
     assert 'ENTRYPOINT ["/app/lynx-entrypoint.sh"]' in text
     assert "go test" not in text
     assert "prepare-maven-e2e-bundle" not in text

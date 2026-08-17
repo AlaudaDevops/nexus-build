@@ -865,7 +865,7 @@ def test_run_e2e_uses_godog_tags_config_and_preserves_test_exit(tmp_path):
     nexus = testing_dir / "nexus.test"
     nexus.write_text(
         "#!/usr/bin/env bash\n"
-        'printf \'%s|%s|%s\\n\' "$PWD" "$E2E_CONFIG" "$*" > "$LYNX_TEST_CALLS"\n'
+        'printf \'%s|%s|%s\\n\' "$PWD" "$TESTING_CONFIG" "$*" > "$LYNX_TEST_CALLS"\n'
         "exit 37\n"
     )
     nexus.chmod(0o755)

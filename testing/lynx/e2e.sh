@@ -46,7 +46,7 @@ run_e2e() {
   fi
   (
     cd "$run_dir" || exit 1
-    E2E_CONFIG=$config "$test_command" \
+    TESTING_CONFIG=$config "$test_command" \
       --godog.concurrency=2 \
       --godog.format=allure \
       "--godog.tags=${tags}"

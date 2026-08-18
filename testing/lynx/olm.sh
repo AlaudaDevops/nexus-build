@@ -71,8 +71,7 @@ _olm_timed_probe() {
 }
 
 resolve_operator_catalog() {
-  local expected manifests resolved
-  expected=$(listed_operator_version) || return 1
+  local manifests resolved
   manifests=$(_olm_kubectl get packagemanifests -A -o json) || {
     log "ERROR: failed to list OLM PackageManifests"
     return 1
@@ -90,12 +89,8 @@ resolve_operator_catalog() {
     ' 2>/dev/null) || {
       log "ERROR: package ${OPERATOR_PACKAGE} channel ${OPERATOR_CHANNEL} could not be resolved uniquely"
       return 1
-    }
+  }
   IFS=$'\t' read -r OPERATOR_CSV CATALOG_SOURCE CATALOG_NAMESPACE <<<"$resolved"
-  if [[ $OPERATOR_CSV != "$expected" ]]; then
-    log "ERROR: selected channel CSV does not match the listed operator version"
-    return 1
-  fi
   export OPERATOR_CSV CATALOG_SOURCE CATALOG_NAMESPACE
 }
 

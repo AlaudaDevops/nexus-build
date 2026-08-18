@@ -1,4 +1,4 @@
-FROM registry-dev.alauda.io/platform-edge/tekton-catalog-incubator/golang:v1.25 AS builder
+FROM hub-mirrors.alauda.cn/library/golang:1.25.4-bookworm AS builder
 
 WORKDIR /tools
 RUN mkdir -p /tools/bin
@@ -9,15 +9,9 @@ RUN set -eux; \
     cd /app && \
     CGO_ENABLED=0 go test -c -o /tools/bin/nexus.test ./
 
-# ---- test-base, inlined from testing/Containerfile.base (no external
-# registry.alauda.cn:60070/devops/nexus-ce-test-base image -- that host has no
-# registry-dev mirror and is unreachable from edge-build's buildkit builders; see
-# migrations/nexus/changes/nexus-ce-operator/state.yaml decision
-# integration-test-base-image-merged, ported from the alauda-81.1 line commit
-# ea564b6/f424f0e/13536db for release-3.76 DEVOPS-44489). hub-mirrors.alauda.cn
-# is ALSO unreachable from the same buildkit builders (only registry-dev.alauda.io
-# mirrors are reachable) -- use the registry-dev platform-edge mirror (same tag). ----
-FROM registry-dev.alauda.io/platform-edge/python:3.12-slim AS test-base
+# IDC-only build branch: use the legacy registries reachable from the IDC
+# BuildKit workers. The GitLab/edge-build branch continues to use registry-dev.
+FROM registry.alauda.cn:60070/devops/nexus-ce-test-base:latest AS test-base
 
 WORKDIR /tools
 RUN mkdir -p /tools/bin

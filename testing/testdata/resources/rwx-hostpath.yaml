@@ -1,0 +1,13 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+# DEVOPS-44461: nfs is the DEFAULT SC so bdd's <storage-class> (default-first) resolves to it for
+# every component; local-path is RWO-only (verified: v0.0.31 rejects RWM). no-provisioner; the RWX
+# PV pool is loop-generated in prepare-cluster.sh (RWX_PV_POOL, default 40) -- PVs advertise all
+# access modes (RWO+RWX+ROX) so any PVC binds. hostPath capacity is a binding label, not allocation.
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: Immediate
+reclaimPolicy: Retain

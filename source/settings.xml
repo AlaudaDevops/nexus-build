@@ -5,12 +5,20 @@
           http://maven.apache.org/xsd/settings-1.0.0.xsd">
 
 
+  <!-- DEVOPS-44489: build-nexus.alauda.cn (internal Alauda maven-central proxy)
+       is unreachable from edge-build (confirmed live: same host/IP,
+       192.168.156.101, as the npmRegistryServer fix in source/.yarnrc.yml;
+       Maven's own Connect timed out confirms it directly). Swapped to Maven
+       Central's own public endpoint, which needs no mirror/proxy at all. Same
+       fix shape as the npm registry fix and the cohort's established GOPROXY
+       rewrite: internal Alauda artifact mirror unreachable, swap to the
+       reachable public upstream, evidenced live. -->
   <mirrors>
     <mirror>
-      <id>alauda-central</id>
+      <id>central</id>
       <mirrorOf>central</mirrorOf>
-      <name>Alauda Central Repository</name>
-      <url>https://build-nexus.alauda.cn/repository/maven-central/</url>
+      <name>Maven Central Repository</name>
+      <url>https://repo.maven.apache.org/maven2/</url>
     </mirror>
   </mirrors>
 

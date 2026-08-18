@@ -1,3 +1,13 @@
+# nexus-ce-base: the JDK17+Node22+Yarn build-time environment image used to
+# compile the Nexus server app (build-nexus-app step in build-image.yaml).
+# Not shipped to customers -- amd64-only (the compile step always runs on a
+# single build node regardless of the target server-image platforms).
+#
+# Option-D (DEVOPS-44489): hub `alauda` catalog's clone-image-build-test-scan@0.2
+# (type:tekton) is unserved on edge-build (memory edge-build-hub-resolver-gap).
+# Resolved as a native inline pipelineSpec -- no top-level pipelineRef, inner
+# taskRefs `resolver: hub` (no `type:`) from catalog/extras at served versions,
+# matching the gitlab/toolbox/nexus-ce-operator precedent.
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
@@ -5,82 +15,134 @@ metadata:
   annotations:
     pipelinesascode.tekton.dev/on-comment: "^((/test-all)|(/build-base-image))$"
     pipelinesascode.tekton.dev/max-keep-runs: "5"
+    pipelinesascode.tekton.dev/cancel-in-progress: "true"
 spec:
-  pipelineRef:
-    resolver: hub
-    params:
-      - name: catalog
-        value: alauda
-      - name: type
-        value: tekton
-      - name: kind
-        value: pipeline
-      - name: name
-        value: clone-image-build-test-scan
-      - name: version
-        value: "0.2"
+  timeouts:
+    pipeline: 1h
 
   params:
     - name: git-url
       value: "{{ repo_url }}"
     - name: git-revision
       value: "{{ source_branch }}"
-    - name: git-commit
-      value: "{{ revision }}"
     - name: pull-request-number
       value: "{{ pull_request_number }}"
 
-    - name: image-repository
-      value: build-harbor.alauda.cn/devops/nexus-ce-base
+  pipelineSpec:
+    description: >-
+      Inline pipeline for nexus-ce-base (build-base-image.yaml): git-clone ->
+      buildctl (amd64-only build environment image, no scan -- matches source
+      pipeline's ignore-trivy-scan: true).
 
-    - name: containerfile-path
-      value: image/Containerfile.base
+    params:
+      - name: git-url
+        type: string
+      - name: git-revision
+        type: string
+      - name: pull-request-number
+        type: string
+        default: ""
 
-    - name: context
-      value: "image"
+    tasks:
+      - name: git-clone
+        timeout: 30m
+        retries: 3
+        taskRef:
+          resolver: hub
+          params:
+            - {name: catalog, value: catalog}
+            - {name: kind, value: task}
+            - {name: name, value: git-clone}
+            - {name: version, value: "0.10"}
+        params:
+          - name: url
+            value: $(params.git-url)
+          - name: revision
+            value: $(params.git-revision)
+          - name: pr-number
+            value: $(params.pull-request-number)
+        workspaces:
+          - name: output
+            workspace: source
+          - name: basic-auth
+            workspace: basic-auth
 
-    - name: tags
-      value:
-        - latest
+      # image-repository: build-harbor.alauda.cn/devops/nexus-ce-base ->
+      # {{ registry_url }}/alauda-devops-toolchain/nexus/nexus-ce-base (P1/P2,
+      # output-path convention shared with nexus-ce-operator).
+      - name: buildctl
+        runAfter: [git-clone]
+        timeout: 45m
+        retries: 1
+        taskRef:
+          resolver: hub
+          params:
+            - {name: catalog, value: extras}
+            - {name: kind, value: task}
+            - {name: name, value: buildctl}
+            - {name: version, value: "0.1"}
+        params:
+          - name: imageURL
+            value: "{{ registry_url }}/alauda-devops-toolchain/nexus/nexus-ce-base"
+          - name: imageTags
+            value:
+              - latest
+          - name: containerfile
+            value: Containerfile.base
+          - name: context
+            value: image
+          - name: platform
+            value:
+              - linux/amd64
+        workspaces:
+          - name: source
+            workspace: source
+          - name: registry-config
+            workspace: registry-config
 
-    - name: ignore-trivy-scan
-      value: "true"
+    workspaces:
+      - name: source
+        description: Shared source checkout workspace.
+      - name: basic-auth
+        description: Git auth credentials injected by the code-alauda-io connector.
+      - name: registry-config
+        description: Docker registry auth mounted as config.json (registry-alauda-io).
 
-    - name: file-list-for-commit-sha
-      value:
-        - .tekton/build-base-image.yaml
-        - image/Containerfile.base
   workspaces:
     - name: source
       volumeClaimTemplate:
         spec:
+          storageClassName: sc-topolvm
           accessModes:
-            - ReadWriteMany
+            - ReadWriteOnce
           resources:
             requests:
-              storage: 1Gi
-    - name: registryconfig
-      secret:
-        secretName: build-harbor.kauto.docfj
-    # This secret will be replaced by the pac controller
+              storage: 2Gi
     - name: basic-auth
+      csi:
+        driver: connectors-csi
+        readOnly: true
+        volumeAttributes:
+          configuration.names: gitconfig
+          connector.name: code-alauda-io
+          connector.namespace: alauda-devops-toolchain
+          token.expiration: 30m
+    - name: registry-config
       secret:
-        secretName: "{{ git_auth_secret }}"
-    - name: gitversion-config
-      configMap:
-        name: gitversion-config
+        secretName: "{{ registry_secret }}"
 
   taskRunTemplate:
-    # 让所有任务都以非 root 用户运行。
     podTemplate:
       securityContext:
         runAsUser: 65532
         runAsGroup: 65532
         fsGroup: 65532
         fsGroupChangePolicy: "OnRootMismatch"
+      imagePullSecrets:
+        - name: "{{ registry_secret }}"
 
   taskRunSpecs:
-    - pipelineTaskName: prepare-build
+    - pipelineTaskName: buildctl
       computeResources:
         limits:
           cpu: "4"

@@ -1,23 +1,17 @@
-FROM registry-dev.alauda.io/platform-edge/tekton-catalog-incubator/golang:v1.25 AS builder
+FROM hub-mirrors.alauda.cn/library/golang:1.25.4-bookworm AS builder
 
 WORKDIR /tools
 RUN mkdir -p /tools/bin
 COPY testing /app
 # 安装 playwright
-ENV GOPROXY='https://gomod.alauda.io,direct'
+ENV GOPROXY='https://goproxy.cn,direct'
 RUN set -eux; \
     cd /app && \
     CGO_ENABLED=0 go test -c -o /tools/bin/nexus.test ./
 
-# ---- test-base, inlined from testing/Containerfile.base (no external
-# registry.alauda.cn:60070/devops/nexus-ce-test-base image -- that host has no
-# registry-dev mirror and is unreachable from edge-build's buildkit builders; see
-# migrations/nexus/changes/nexus-ce-operator/state.yaml decision
-# integration-test-base-image-merged, ported from the alauda-81.1 line commit
-# ea564b6/f424f0e/13536db for release-3.76 DEVOPS-44489). hub-mirrors.alauda.cn
-# is ALSO unreachable from the same buildkit builders (only registry-dev.alauda.io
-# mirrors are reachable) -- use the registry-dev platform-edge mirror (same tag). ----
-FROM registry-dev.alauda.io/platform-edge/python:3.12-slim
+# IDC-only build branch: use the legacy registries reachable from the IDC
+# BuildKit workers.  The GitLab/edge-build branch continues to use registry-dev.
+FROM registry.alauda.cn:60070/devops/nexus-ce-test-base:latest AS test-base
 
 WORKDIR /tools
 RUN mkdir -p /tools/bin
@@ -40,6 +34,7 @@ RUN apt-get update && apt-get install -y ca-certificates tzdata bash locales mak
     nodejs \
     npm \
     openjdk-17-jdk \
+    libnss-wrapper \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && locale-gen en_US.UTF-8 \
@@ -80,16 +75,48 @@ RUN set -eux; \
 ARG ALLURE_VERSION=2.24.1
 RUN wget https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz \
     && tar -zxvf allure-${ALLURE_VERSION}.tgz -C /opt/ \
-    && ln -s /opt/allure-${ALLURE_VERSION}/bin/allure /usr/local/bin/allure \
+    && ln -sfn /opt/allure-${ALLURE_VERSION}/bin/allure /usr/local/bin/allure \
     && rm allure-${ALLURE_VERSION}.tgz
 
+# ---- Maven E2E dependency bundle ----
+FROM test-base AS maven-bundle
+
+ARG MAVEN_BUNDLE_MIRROR_URL=https://repo.maven.apache.org/maven2
+COPY testing/nexus-e2e/test_projects/maven /tmp/nexus-e2e-maven
+COPY testing/hack/prepare-maven-e2e-bundle.sh /usr/local/bin/prepare-maven-e2e-bundle
+RUN chmod 755 /usr/local/bin/prepare-maven-e2e-bundle && \
+    PATH=/tools/bin/maven/bin:$PATH MAVEN_BUNDLE_MIRROR_URL=$MAVEN_BUNDLE_MIRROR_URL \
+      /usr/local/bin/prepare-maven-e2e-bundle /tmp/nexus-e2e-maven /opt/nexus-e2e/maven-bundle && \
+    mv /opt/nexus-e2e/maven-bundle/repository /opt/nexus-e2e/maven-repository && \
+    rmdir /opt/nexus-e2e/maven-bundle && \
+    find /opt/nexus-e2e/maven-repository -type d -exec chmod 755 {} + && \
+    find /opt/nexus-e2e/maven-repository -type f -exec chmod 644 {} +
+
 # ---- test-image, original testing/Containerfile final stage ----
+FROM test-base AS test-image
+
 RUN mkdir -p /tools/bin
 COPY --from=builder /tools/bin /tools/bin
 
-COPY . /app
+COPY --from=maven-bundle /opt/nexus-e2e/maven-repository /opt/nexus-e2e/maven-repository
+COPY testing/hack/import-maven-e2e-dependencies.py /usr/local/bin/import-maven-e2e-dependencies
+RUN chmod 755 /usr/local/bin/import-maven-e2e-dependencies && \
+    test -r /opt/nexus-e2e/maven-repository/junit/junit/4.11/junit-4.11.jar && \
+    test -r /opt/nexus-e2e/maven-repository/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar && \
+    test -r /opt/nexus-e2e/maven-repository/org/apache/maven/plugins/maven-deploy-plugin/2.8.2/maven-deploy-plugin-2.8.2.jar && \
+    test -r /opt/nexus-e2e/maven-repository/org/apache/maven/plugins/maven-deploy-plugin/2.8.2/maven-deploy-plugin-2.8.2.pom && \
+    test -x /usr/local/bin/import-maven-e2e-dependencies
 
-RUN chmod -R 755 /app
+COPY testing/features /app/testing/features
+COPY testing/testdata /app/testing/testdata
+COPY testing/hack /app/testing/hack
+COPY testing/nexus-e2e /app/testing/nexus-e2e
+COPY testing/lynx /app/lynx
+COPY testing/lynx-entrypoint.sh /app/lynx-entrypoint.sh
+
+RUN chmod -R 755 /app && \
+    chmod 755 /app/lynx-entrypoint.sh && \
+    test -x /app/lynx-entrypoint.sh
 
 WORKDIR /app/testing
 
@@ -103,5 +130,4 @@ ENV LANG=zh_CN.UTF-8
 ENV LC_ALL=zh_CN.UTF-8
 ENV TEST_COMMAND="nexus.test"
 
-ENTRYPOINT ["nexus.test"]
-CMD ["--godog.concurrency=2", "--godog.format=allure", "--godog.tags= ~@e2e"]
+ENTRYPOINT ["/app/lynx-entrypoint.sh"]

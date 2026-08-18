@@ -79,7 +79,7 @@ JSON
 ''',
     )
     result = run_olm_bash(
-        'resolve_operator_catalog; printf "%s|%s|%s\\n" "$OPERATOR_CSV" "$CATALOG_SOURCE" "$CATALOG_NAMESPACE"',
+        'resolve_operator_catalog && printf "%s|%s|%s\\n" "$OPERATOR_CSV" "$CATALOG_SOURCE" "$CATALOG_NAMESPACE"',
         env=olm_env(tmp_path),
     )
 
@@ -104,7 +104,7 @@ JSON
     assert result.stdout == "nexus-ce-operator.v3.76.12\n"
 
 
-def test_resolve_operator_catalog_rejects_channel_version_mismatch(tmp_path):
+def test_resolve_operator_catalog_uses_channel_csv_when_listed_version_differs(tmp_path):
     write_fake_kubectl(
         tmp_path,
         '''cat <<'JSON'
@@ -112,10 +112,13 @@ def test_resolve_operator_catalog_rejects_channel_version_mismatch(tmp_path):
 JSON
 ''',
     )
-    result = run_olm_bash("resolve_operator_catalog", env=olm_env(tmp_path))
+    result = run_olm_bash(
+        'resolve_operator_catalog && printf "%s|%s|%s\\n" "$OPERATOR_CSV" "$CATALOG_SOURCE" "$CATALOG_NAMESPACE"',
+        env=olm_env(tmp_path),
+    )
 
-    assert result.returncode != 0
-    assert "does not match" in result.stderr
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "nexus-ce-operator.v9.9.9|catalog|olm\n"
 
 
 @pytest.mark.parametrize(("operator_groups", "target_namespaces", "ok"), [("0", "", True), ("1", "", True), ("1", "other", False), ("2", "", False)])

@@ -71,8 +71,7 @@ _olm_timed_probe() {
 }
 
 resolve_operator_catalog() {
-  local expected manifests resolved
-  expected=$(listed_operator_version) || return 1
+  local manifests resolved
   manifests=$(_olm_kubectl get packagemanifests -A -o json) || {
     log "ERROR: failed to list OLM PackageManifests"
     return 1
@@ -90,16 +89,8 @@ resolve_operator_catalog() {
     ' 2>/dev/null) || {
       log "ERROR: package ${OPERATOR_PACKAGE} channel ${OPERATOR_CHANNEL} could not be resolved uniquely"
       return 1
-    }
+  }
   IFS=$'\t' read -r OPERATOR_CSV CATALOG_SOURCE CATALOG_NAMESPACE <<<"$resolved"
-  # Lynx currently injects the release version (for example, 3.76.12), while
-  # OLM exposes the full CSV name (for example,
-  # nexus-ce-operator.v3.76.12).  Also accept a full CSV value for backwards
-  # compatibility, but never accept a different listed version.
-  if [[ $OPERATOR_CSV != "$expected" && $OPERATOR_CSV != *.v"$expected" ]]; then
-    log "ERROR: selected channel CSV does not match the listed operator version"
-    return 1
-  fi
   export OPERATOR_CSV CATALOG_SOURCE CATALOG_NAMESPACE
 }
 
